@@ -114,8 +114,8 @@ export default function Dashboard() {
 
   const chartColors =
     theme === 'dark'
-      ? { grid: '#3f3f46', axis: '#52525b', tick: '#a1a1aa', tooltipBg: '#18181b', tooltipText: '#fafafa', legend: '#d4d4d8' }
-      : { grid: '#e4e4e7', axis: '#d4d4d8', tick: '#52525b', tooltipBg: '#ffffff', tooltipText: '#18181b', legend: '#3f3f46' }
+      ? { grid: '#3f3f46', axis: '#52525b', tick: '#a1a1aa', wpmTick: '#34d399', disciplineTick: '#60a5fa', tooltipBg: '#18181b', tooltipText: '#fafafa', legend: '#d4d4d8' }
+      : { grid: '#e4e4e7', axis: '#d4d4d8', tick: '#52525b', wpmTick: '#059669', disciplineTick: '#2563eb', tooltipBg: '#ffffff', tooltipText: '#18181b', legend: '#3f3f46' }
 
   if (loading) {
     return (
@@ -183,7 +183,7 @@ export default function Dashboard() {
                 <YAxis
                   yAxisId="wpm"
                   orientation="left"
-                  tick={{ fill: '#059669', fontSize: 12 }}
+                  tick={{ fill: chartColors.wpmTick, fontSize: 12 }}
                   axisLine={{ stroke: chartColors.axis }}
                   tickLine={{ stroke: chartColors.axis }}
                 />
@@ -191,7 +191,7 @@ export default function Dashboard() {
                   yAxisId="discipline"
                   orientation="right"
                   domain={[0, 100]}
-                  tick={{ fill: '#2563eb', fontSize: 12 }}
+                  tick={{ fill: chartColors.disciplineTick, fontSize: 12 }}
                   axisLine={{ stroke: chartColors.axis }}
                   tickLine={{ stroke: chartColors.axis }}
                 />
