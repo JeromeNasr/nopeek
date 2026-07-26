@@ -3,7 +3,23 @@ import { generatePracticeTokens, practiceCategories } from '../data/wordLists'
 import { SESSION_SAVED_EVENT } from '../hooks/useStreak'
 import { supabase } from '../supabaseClient'
 
-const TEST_DURATION_MS = 60_000
+const DURATION_PRESETS = [15, 30, 45, 60]
+const DEFAULT_DURATION = 60
+const MIN_DURATION = 5
+const MAX_DURATION = 300
+const DURATION_STORAGE_KEY = 'nopeek-duration'
+
+function tokenCountFor(seconds) {
+  return Math.max(150, seconds * 3)
+}
+
+function getStoredDuration() {
+  const stored = Number(localStorage.getItem(DURATION_STORAGE_KEY))
+  if (!Number.isInteger(stored) || stored < MIN_DURATION || stored > MAX_DURATION) {
+    return DEFAULT_DURATION
+  }
+  return stored
+}
 
 function countWordsTyped(input, words) {
   let count = 0
@@ -73,7 +89,14 @@ function getWordCharClass(wordIndex, charIndex, currentWordIndex, input, word, g
 
 export default function TypingTest({ peeks = 0, eyeDiscipline = 100, isLookingDown = false }) {
   const [category, setCategory] = useState('common')
-  const [words, setWords] = useState(() => generatePracticeTokens('common'))
+  const [duration, setDuration] = useState(getStoredDuration)
+  const [customDuration, setCustomDuration] = useState(() => {
+    const stored = getStoredDuration()
+    return DURATION_PRESETS.includes(stored) ? '' : String(stored)
+  })
+  const [words, setWords] = useState(() =>
+    generatePracticeTokens('common', tokenCountFor(getStoredDuration())),
+  )
   const [input, setInput] = useState('')
   const [started, setStarted] = useState(false)
   const [finished, setFinished] = useState(false)
@@ -104,11 +127,12 @@ export default function TypingTest({ peeks = 0, eyeDiscipline = 100, isLookingDo
 
   const finalWpm = liveWpm
   const finalAccuracy = liveAccuracy
-  const timeRemaining = Math.max(0, Math.ceil((TEST_DURATION_MS - elapsedMs) / 1000))
-  const progress = Math.min((elapsedMs / TEST_DURATION_MS) * 100, 100)
+  const durationMs = duration * 1000
+  const timeRemaining = Math.max(0, Math.ceil((durationMs - elapsedMs) / 1000))
+  const progress = Math.min((elapsedMs / durationMs) * 100, 100)
 
   const restart = useCallback(() => {
-    setWords(generatePracticeTokens(category))
+    setWords(generatePracticeTokens(category, tokenCountFor(duration)))
     setInput('')
     setStarted(false)
     setFinished(false)
@@ -119,12 +143,35 @@ export default function TypingTest({ peeks = 0, eyeDiscipline = 100, isLookingDo
     setSaveStatus(null)
     savedRef.current = false
     containerRef.current?.focus()
-  }, [category])
+  }, [category, duration])
+
+  function handleDurationChange(nextDuration) {
+    if (started || finished) return
+    setDuration(nextDuration)
+    localStorage.setItem(DURATION_STORAGE_KEY, String(nextDuration))
+    setWords(generatePracticeTokens(category, tokenCountFor(nextDuration)))
+    setInput('')
+  }
+
+  function handlePresetChange(nextDuration) {
+    setCustomDuration('')
+    handleDurationChange(nextDuration)
+    containerRef.current?.focus()
+  }
+
+  function handleCustomDurationChange(value) {
+    setCustomDuration(value)
+
+    const seconds = Number(value)
+    if (!Number.isInteger(seconds) || seconds < MIN_DURATION || seconds > MAX_DURATION) return
+
+    handleDurationChange(seconds)
+  }
 
   function handleCategoryChange(nextCategory) {
     if (started || finished) return
     setCategory(nextCategory)
-    setWords(generatePracticeTokens(nextCategory))
+    setWords(generatePracticeTokens(nextCategory, tokenCountFor(duration)))
     setInput('')
     containerRef.current?.focus()
   }
@@ -136,13 +183,13 @@ export default function TypingTest({ peeks = 0, eyeDiscipline = 100, isLookingDo
       const elapsed = Date.now() - startTime
       setElapsedMs(elapsed)
 
-      if (elapsed >= TEST_DURATION_MS) {
+      if (elapsed >= durationMs) {
         setFinished(true)
       }
     }, 50)
 
     return () => clearInterval(interval)
-  }, [started, finished, startTime])
+  }, [started, finished, startTime, durationMs])
 
   useEffect(() => {
     if (!finished || savedRef.current) return
@@ -162,7 +209,7 @@ export default function TypingTest({ peeks = 0, eyeDiscipline = 100, isLookingDo
         accuracy: finalAccuracy,
         peeks,
         eye_discipline: eyeDiscipline,
-        duration_seconds: TEST_DURATION_MS / 1000,
+        duration_seconds: duration,
       })
 
       if (!error) window.dispatchEvent(new Event(SESSION_SAVED_EVENT))
@@ -170,7 +217,7 @@ export default function TypingTest({ peeks = 0, eyeDiscipline = 100, isLookingDo
     }
 
     saveSession()
-  }, [finished, finalWpm, finalAccuracy, peeks, eyeDiscipline])
+  }, [finished, finalWpm, finalAccuracy, peeks, eyeDiscipline, duration])
 
   function handleKeyDown(e) {
     if (finished) return
@@ -286,11 +333,65 @@ export default function TypingTest({ peeks = 0, eyeDiscipline = 100, isLookingDo
         </div>
       </div>
 
+      <div className="mb-6">
+        <p className="mb-2 text-xs font-medium uppercase tracking-wider text-zinc-500">Duration</p>
+        <div className="flex flex-wrap items-center gap-2">
+          {DURATION_PRESETS.map((seconds) => (
+            <button
+              key={seconds}
+              type="button"
+              disabled={started}
+              onClick={() => handlePresetChange(seconds)}
+              className={[
+                'rounded-lg px-3 py-1.5 text-sm font-medium transition',
+                duration === seconds && customDuration === ''
+                  ? 'bg-emerald-600 text-white'
+                  : 'border border-zinc-300 text-zinc-600 hover:border-zinc-400 hover:text-zinc-900 dark:border-zinc-700 dark:text-zinc-400 dark:hover:border-zinc-600 dark:hover:text-zinc-200',
+                started ? 'cursor-not-allowed opacity-50' : '',
+              ].join(' ')}
+            >
+              {seconds}s
+            </button>
+          ))}
+
+          <label
+            className={[
+              'flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm font-medium transition',
+              customDuration === ''
+                ? 'border-zinc-300 text-zinc-600 dark:border-zinc-700 dark:text-zinc-400'
+                : 'border-emerald-600 text-emerald-700 dark:text-emerald-400',
+              started ? 'cursor-not-allowed opacity-50' : '',
+            ].join(' ')}
+          >
+            Custom
+            <input
+              type="number"
+              inputMode="numeric"
+              min={MIN_DURATION}
+              max={MAX_DURATION}
+              value={customDuration}
+              disabled={started}
+              placeholder="90"
+              onChange={(e) => handleCustomDurationChange(e.target.value)}
+              className="w-16 rounded border border-zinc-300 bg-transparent px-1.5 py-0.5 text-sm tabular-nums text-zinc-900 outline-none focus:border-emerald-500 disabled:cursor-not-allowed dark:border-zinc-700 dark:text-white"
+            />
+            <span className="text-zinc-500">s</span>
+          </label>
+        </div>
+        {customDuration !== '' && duration !== Number(customDuration) && (
+          <p className="mt-2 text-xs text-amber-600 dark:text-amber-400">
+            Enter a whole number between {MIN_DURATION} and {MAX_DURATION} seconds. Still using {duration}s.
+          </p>
+        )}
+      </div>
+
       <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold text-zinc-900 dark:text-white">Typing Test</h1>
           <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">
-            {started ? 'Keep your eyes on the screen.' : 'Start typing to begin the 60-second test.'}
+            {started
+              ? 'Keep your eyes on the screen.'
+              : `Start typing to begin the ${duration}-second test.`}
           </p>
         </div>
 
@@ -310,7 +411,7 @@ export default function TypingTest({ peeks = 0, eyeDiscipline = 100, isLookingDo
           <div>
             <span className="text-zinc-500">Time</span>
             <p className="text-xl font-semibold tabular-nums text-zinc-900 dark:text-white">
-              {started ? `${timeRemaining}s` : '60s'}
+              {started ? `${timeRemaining}s` : `${duration}s`}
             </p>
           </div>
         </div>
