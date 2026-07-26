@@ -15,7 +15,7 @@ export const commonWords = [
   'send', 'expect', 'build', 'stay', 'fall', 'cut', 'reach', 'kill', 'remain', 'suggest', 'raise',
   'pass', 'sell', 'require', 'report', 'decide', 'pull', 'break', 'push', 'practice', 'type', 'fast',
   'slow', 'word', 'world', 'home', 'hand', 'part', 'place', 'case', 'week', 'company', 'system',
-  'program',
+  'program', 'thing', 'point', 'number',
 ]
 
 export const codeSnippets = [
