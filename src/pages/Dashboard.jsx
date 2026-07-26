@@ -10,14 +10,9 @@ import {
   XAxis,
   YAxis,
 } from 'recharts'
+import useTheme from '../hooks/useTheme'
+import { calculateStreak } from '../lib/streak'
 import { supabase } from '../supabaseClient'
-
-function toLocalDateString(date) {
-  const y = date.getFullYear()
-  const m = String(date.getMonth() + 1).padStart(2, '0')
-  const d = String(date.getDate()).padStart(2, '0')
-  return `${y}-${m}-${d}`
-}
 
 function formatDateTime(isoString) {
   return new Date(isoString).toLocaleString(undefined, {
@@ -43,43 +38,20 @@ function average(values) {
   return Math.round(values.reduce((sum, value) => sum + value, 0) / values.length)
 }
 
-function calculateStreak(sessions) {
-  if (sessions.length === 0) return 0
-
-  const sessionDates = new Set(
-    sessions.map((session) => toLocalDateString(new Date(session.created_at))),
-  )
-
-  let streak = 0
-  const cursor = new Date()
-  cursor.setHours(0, 0, 0, 0)
-
-  const today = toLocalDateString(cursor)
-  if (!sessionDates.has(today)) {
-    cursor.setDate(cursor.getDate() - 1)
-  }
-
-  while (sessionDates.has(toLocalDateString(cursor))) {
-    streak++
-    cursor.setDate(cursor.getDate() - 1)
-  }
-
-  return streak
-}
-
 function StatCard({ label, value, suffix = '' }) {
   return (
-    <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-5">
+    <div className="rounded-xl border border-zinc-200 bg-white p-5 dark:border-zinc-800 dark:bg-zinc-900/50">
       <p className="text-xs font-medium uppercase tracking-wider text-zinc-500">{label}</p>
-      <p className="mt-2 text-3xl font-semibold tabular-nums text-white">
+      <p className="mt-2 text-2xl font-semibold tabular-nums text-zinc-900 sm:text-3xl dark:text-white">
         {value}
-        {suffix && <span className="text-lg text-zinc-400">{suffix}</span>}
+        {suffix && <span className="text-lg text-zinc-500 dark:text-zinc-400">{suffix}</span>}
       </p>
     </div>
   )
 }
 
 export default function Dashboard() {
+  const { theme } = useTheme()
   const [sessions, setSessions] = useState([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -140,19 +112,24 @@ export default function Dashboard() {
     [sessions],
   )
 
+  const chartColors =
+    theme === 'dark'
+      ? { grid: '#3f3f46', axis: '#52525b', tick: '#a1a1aa', tooltipBg: '#18181b', tooltipText: '#fafafa', legend: '#d4d4d8' }
+      : { grid: '#e4e4e7', axis: '#d4d4d8', tick: '#52525b', tooltipBg: '#ffffff', tooltipText: '#18181b', legend: '#3f3f46' }
+
   if (loading) {
     return (
-      <div className="mx-auto max-w-6xl px-6 py-16">
-        <p className="text-zinc-400">Loading dashboard…</p>
+      <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6">
+        <p className="text-zinc-600 dark:text-zinc-400">Loading dashboard…</p>
       </div>
     )
   }
 
   if (!authenticated) {
     return (
-      <div className="mx-auto max-w-6xl px-6 py-16 text-center">
-        <h1 className="text-3xl font-semibold text-white">Dashboard</h1>
-        <p className="mt-3 text-zinc-400">Sign in to view your typing progress.</p>
+      <div className="mx-auto max-w-6xl px-4 py-16 text-center sm:px-6">
+        <h1 className="text-3xl font-semibold text-zinc-900 dark:text-white">Dashboard</h1>
+        <p className="mt-3 text-zinc-600 dark:text-zinc-400">Sign in to view your typing progress.</p>
         <Link
           to="/login"
           className="mt-6 inline-flex rounded-lg bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-white transition hover:bg-emerald-500"
@@ -164,14 +141,14 @@ export default function Dashboard() {
   }
 
   return (
-    <div className="mx-auto max-w-6xl px-6 py-10">
+    <div className="mx-auto w-full max-w-6xl px-4 py-8 sm:px-6 sm:py-10">
       <div className="mb-8">
-        <h1 className="text-3xl font-semibold tracking-tight text-white">Dashboard</h1>
-        <p className="mt-2 text-zinc-400">Track your WPM, accuracy, and eye discipline over time.</p>
+        <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 sm:text-3xl dark:text-white">Dashboard</h1>
+        <p className="mt-2 text-zinc-600 dark:text-zinc-400">Track your WPM, accuracy, and eye discipline over time.</p>
       </div>
 
       {error && (
-        <p className="mb-6 rounded-lg border border-red-900/50 bg-red-950/50 px-4 py-3 text-sm text-red-400">
+        <p className="mb-6 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-600 dark:border-red-900/50 dark:bg-red-950/50 dark:text-red-400">
           {error}
         </p>
       )}
@@ -184,50 +161,50 @@ export default function Dashboard() {
         <StatCard label="Current streak" value={stats.streak} suffix={stats.streak === 1 ? ' day' : ' days'} />
       </div>
 
-      <section className="mt-8 rounded-xl border border-zinc-800 bg-zinc-900/50 p-6">
-        <h2 className="text-lg font-semibold text-white">Progress over time</h2>
-        <p className="mt-1 text-sm text-zinc-400">WPM and eye discipline across your sessions.</p>
+      <section className="mt-8 rounded-xl border border-zinc-200 bg-white p-4 sm:p-6 dark:border-zinc-800 dark:bg-zinc-900/50">
+        <h2 className="text-lg font-semibold text-zinc-900 dark:text-white">Progress over time</h2>
+        <p className="mt-1 text-sm text-zinc-600 dark:text-zinc-400">WPM and eye discipline across your sessions.</p>
 
         {sessions.length === 0 ? (
           <p className="mt-8 text-sm text-zinc-500">
             No sessions yet. Complete a typing test to see your stats here.
           </p>
         ) : (
-          <div className="mt-6 h-80 w-full">
+          <div className="mt-6 h-64 w-full sm:h-80">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={chartData} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
-                <CartesianGrid stroke="#3f3f46" strokeDasharray="3 3" vertical={false} />
+                <CartesianGrid stroke={chartColors.grid} strokeDasharray="3 3" vertical={false} />
                 <XAxis
                   dataKey="label"
-                  tick={{ fill: '#a1a1aa', fontSize: 12 }}
-                  axisLine={{ stroke: '#52525b' }}
-                  tickLine={{ stroke: '#52525b' }}
+                  tick={{ fill: chartColors.tick, fontSize: 12 }}
+                  axisLine={{ stroke: chartColors.axis }}
+                  tickLine={{ stroke: chartColors.axis }}
                 />
                 <YAxis
                   yAxisId="wpm"
                   orientation="left"
-                  tick={{ fill: '#34d399', fontSize: 12 }}
-                  axisLine={{ stroke: '#52525b' }}
-                  tickLine={{ stroke: '#52525b' }}
+                  tick={{ fill: '#059669', fontSize: 12 }}
+                  axisLine={{ stroke: chartColors.axis }}
+                  tickLine={{ stroke: chartColors.axis }}
                 />
                 <YAxis
                   yAxisId="discipline"
                   orientation="right"
                   domain={[0, 100]}
-                  tick={{ fill: '#60a5fa', fontSize: 12 }}
-                  axisLine={{ stroke: '#52525b' }}
-                  tickLine={{ stroke: '#52525b' }}
+                  tick={{ fill: '#2563eb', fontSize: 12 }}
+                  axisLine={{ stroke: chartColors.axis }}
+                  tickLine={{ stroke: chartColors.axis }}
                 />
                 <Tooltip
                   contentStyle={{
-                    backgroundColor: '#18181b',
-                    border: '1px solid #3f3f46',
+                    backgroundColor: chartColors.tooltipBg,
+                    border: `1px solid ${chartColors.grid}`,
                     borderRadius: '0.5rem',
-                    color: '#fafafa',
+                    color: chartColors.tooltipText,
                   }}
-                  labelStyle={{ color: '#a1a1aa' }}
+                  labelStyle={{ color: chartColors.tick }}
                 />
-                <Legend wrapperStyle={{ color: '#d4d4d8', paddingTop: '12px' }} />
+                <Legend wrapperStyle={{ color: chartColors.legend, paddingTop: '12px' }} />
                 <Line
                   type="monotone"
                   dataKey="wpm"
@@ -254,17 +231,17 @@ export default function Dashboard() {
         )}
       </section>
 
-      <section className="mt-8 overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900/50">
-        <div className="border-b border-zinc-800 px-6 py-4">
-          <h2 className="text-lg font-semibold text-white">Recent sessions</h2>
+      <section className="mt-8 overflow-hidden rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900/50">
+        <div className="border-b border-zinc-200 px-4 py-4 sm:px-6 dark:border-zinc-800">
+          <h2 className="text-lg font-semibold text-zinc-900 dark:text-white">Recent sessions</h2>
         </div>
 
         {recentSessions.length === 0 ? (
-          <p className="px-6 py-8 text-sm text-zinc-500">No sessions recorded yet.</p>
+          <p className="px-4 py-8 text-sm text-zinc-500 sm:px-6">No sessions recorded yet.</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full min-w-[640px] text-left text-sm">
-              <thead className="bg-zinc-950/60 text-xs uppercase tracking-wider text-zinc-500">
+              <thead className="bg-zinc-50 text-xs uppercase tracking-wider text-zinc-500 dark:bg-zinc-950/60">
                 <tr>
                   <th className="px-6 py-3 font-medium">Date</th>
                   <th className="px-6 py-3 font-medium">WPM</th>
@@ -274,9 +251,12 @@ export default function Dashboard() {
                   <th className="px-6 py-3 font-medium">Duration</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-zinc-800">
+              <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
                 {recentSessions.map((session) => (
-                  <tr key={session.id} className="text-zinc-300 transition hover:bg-zinc-950/40">
+                  <tr
+                    key={session.id}
+                    className="text-zinc-700 transition hover:bg-zinc-50 dark:text-zinc-300 dark:hover:bg-zinc-950/40"
+                  >
                     <td className="px-6 py-4 whitespace-nowrap">{formatDateTime(session.created_at)}</td>
                     <td className="px-6 py-4 tabular-nums">{session.wpm}</td>
                     <td className="px-6 py-4 tabular-nums">{session.accuracy}%</td>
