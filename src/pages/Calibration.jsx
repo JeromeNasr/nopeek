@@ -27,15 +27,14 @@ export default function Calibration() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [clicked, setClicked] = useState(() => new Set())
-  const [complete, setComplete] = useState(false)
+  const complete = clicked.size >= CALIBRATION_POINTS.length
 
   useEffect(() => {
-    if (clicked.size < CALIBRATION_POINTS.length) return
+    if (!complete) return
 
-    setComplete(true)
     const timer = setTimeout(() => navigate('/type'), 2000)
     return () => clearTimeout(timer)
-  }, [clicked.size, navigate])
+  }, [complete, navigate])
 
   useEffect(() => {
     let cancelled = false
@@ -106,21 +105,21 @@ export default function Calibration() {
   }
 
   return (
-    <div className="relative -mx-6 min-h-[calc(100dvh-73px)] bg-zinc-950">
-      <div className="pointer-events-none absolute inset-x-0 top-0 z-10 px-6 pt-8 text-center">
+    <div className="relative flex flex-1 flex-col bg-zinc-50 dark:bg-zinc-950">
+      <div className="pointer-events-none z-10 px-4 pt-8 text-center sm:px-6">
         {complete ? (
-          <p className="text-xl font-semibold text-emerald-400">Calibration complete</p>
+          <p className="text-xl font-semibold text-emerald-600 dark:text-emerald-400">Calibration complete</p>
         ) : (
           <>
-            <h1 className="text-xl font-semibold text-white">Eye tracking calibration</h1>
-            <p className="mt-2 text-sm text-zinc-400">
+            <h1 className="text-xl font-semibold text-zinc-900 dark:text-white">Eye tracking calibration</h1>
+            <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
               Look at each red dot and click it. Click all 9 dots to continue.
             </p>
             {loading && (
               <p className="mt-3 text-sm text-zinc-500">Loading WebGazer and requesting camera access…</p>
             )}
             {error && (
-              <p className="mt-3 text-sm text-red-400">{error}</p>
+              <p className="mt-3 text-sm text-red-600 dark:text-red-400">{error}</p>
             )}
             {!loading && !error && (
               <p className="mt-3 text-sm text-zinc-500">
@@ -132,7 +131,7 @@ export default function Calibration() {
       </div>
 
       {!loading && !error && (
-        <div className="relative h-[calc(100dvh-73px)] w-full">
+        <div className="relative min-h-[60vh] w-full flex-1">
           {CALIBRATION_POINTS.map(([x, y], index) => {
             const isClicked = clicked.has(index)
 
@@ -146,7 +145,7 @@ export default function Calibration() {
                 style={{ left: `${x}%`, top: `${y}%` }}
                 className={[
                   'absolute h-5 w-5 -translate-x-1/2 -translate-y-1/2 rounded-full transition',
-                  'ring-4 ring-offset-2 ring-offset-zinc-950 focus:outline-none',
+                  'ring-4 ring-offset-2 ring-offset-zinc-50 focus:outline-none dark:ring-offset-zinc-950',
                   isClicked
                     ? 'cursor-default bg-emerald-500/40 ring-emerald-500/20'
                     : 'cursor-pointer bg-red-500 ring-red-500/30 hover:scale-110 hover:bg-red-400',

@@ -54,26 +54,26 @@ export default function Login() {
   }
 
   return (
-    <div className="mx-auto flex max-w-md flex-col px-6 py-16">
-      <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-8 shadow-xl shadow-black/20">
-        <h1 className="text-2xl font-semibold tracking-tight text-white">
+    <div className="mx-auto flex max-w-md flex-col px-4 py-12 sm:px-6 sm:py-16">
+      <div className="rounded-xl border border-zinc-200 bg-white p-6 shadow-xl shadow-black/5 sm:p-8 dark:border-zinc-800 dark:bg-zinc-900/50 dark:shadow-black/20">
+        <h1 className="text-2xl font-semibold tracking-tight text-zinc-900 dark:text-white">
           {isSignIn ? 'Welcome back' : 'Create an account'}
         </h1>
-        <p className="mt-2 text-sm text-zinc-400">
+        <p className="mt-2 text-sm text-zinc-600 dark:text-zinc-400">
           {isSignIn
             ? 'Sign in to sync your progress across devices.'
             : 'Sign up to save your typing stats and calibration.'}
         </p>
 
-        <div className="mt-6 flex rounded-lg bg-zinc-950 p-1">
+        <div className="mt-6 flex rounded-lg bg-zinc-100 p-1 dark:bg-zinc-950">
           <button
             type="button"
             onClick={() => switchMode('signin')}
             className={[
               'flex-1 rounded-md px-3 py-2 text-sm font-medium transition',
               isSignIn
-                ? 'bg-zinc-800 text-white shadow-sm'
-                : 'text-zinc-400 hover:text-zinc-200',
+                ? 'bg-white text-zinc-900 shadow-sm dark:bg-zinc-800 dark:text-white'
+                : 'text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-200',
             ].join(' ')}
           >
             Sign in
@@ -84,8 +84,8 @@ export default function Login() {
             className={[
               'flex-1 rounded-md px-3 py-2 text-sm font-medium transition',
               !isSignIn
-                ? 'bg-zinc-800 text-white shadow-sm'
-                : 'text-zinc-400 hover:text-zinc-200',
+                ? 'bg-white text-zinc-900 shadow-sm dark:bg-zinc-800 dark:text-white'
+                : 'text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-200',
             ].join(' ')}
           >
             Sign up
@@ -94,7 +94,7 @@ export default function Login() {
 
         <form onSubmit={handleSubmit} className="mt-6 space-y-4">
           <div>
-            <label htmlFor="email" className="block text-sm font-medium text-zinc-300">
+            <label htmlFor="email" className="block text-sm font-medium text-zinc-700 dark:text-zinc-300">
               Email
             </label>
             <input
@@ -104,13 +104,13 @@ export default function Login() {
               required
               value={email}
               onChange={(e) => setEmail(e.target.value)}
-              className="mt-1.5 w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2.5 text-white placeholder-zinc-500 outline-none transition focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
+              className="mt-1.5 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2.5 text-zinc-900 placeholder-zinc-400 outline-none transition focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 dark:border-zinc-700 dark:bg-zinc-950 dark:text-white dark:placeholder-zinc-500"
               placeholder="you@example.com"
             />
           </div>
 
           <div>
-            <label htmlFor="password" className="block text-sm font-medium text-zinc-300">
+            <label htmlFor="password" className="block text-sm font-medium text-zinc-700 dark:text-zinc-300">
               Password
             </label>
             <input
@@ -121,19 +121,19 @@ export default function Login() {
               minLength={6}
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              className="mt-1.5 w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2.5 text-white placeholder-zinc-500 outline-none transition focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
+              className="mt-1.5 w-full rounded-lg border border-zinc-300 bg-white px-3 py-2.5 text-zinc-900 placeholder-zinc-400 outline-none transition focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 dark:border-zinc-700 dark:bg-zinc-950 dark:text-white dark:placeholder-zinc-500"
               placeholder="••••••••"
             />
           </div>
 
           {error && (
-            <p className="rounded-lg border border-red-900/50 bg-red-950/50 px-3 py-2 text-sm text-red-400">
+            <p className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-600 dark:border-red-900/50 dark:bg-red-950/50 dark:text-red-400">
               {error}
             </p>
           )}
 
           {message && (
-            <p className="rounded-lg border border-emerald-900/50 bg-emerald-950/50 px-3 py-2 text-sm text-emerald-400">
+            <p className="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700 dark:border-emerald-900/50 dark:bg-emerald-950/50 dark:text-emerald-400">
               {message}
             </p>
           )}

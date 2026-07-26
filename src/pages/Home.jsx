@@ -52,25 +52,25 @@ export default function Home() {
         <div className="absolute top-1/2 right-0 h-64 w-64 rounded-full bg-emerald-600/5 blur-3xl" />
       </div>
 
-      <section className="relative mx-auto max-w-5xl px-6 pb-20 pt-20 text-center sm:pt-28">
-        <p className="mb-4 inline-flex items-center rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1 text-xs font-medium uppercase tracking-wider text-emerald-400">
+      <section className="relative mx-auto max-w-5xl px-4 pb-16 pt-14 text-center sm:px-6 sm:pb-20 sm:pt-28">
+        <p className="mb-4 inline-flex items-center rounded-full border border-emerald-500/20 bg-emerald-500/10 px-3 py-1 text-xs font-medium uppercase tracking-wider text-emerald-700 dark:text-emerald-400">
           Touch typing trainer
         </p>
 
-        <h1 className="mx-auto max-w-3xl text-4xl font-bold tracking-tight text-white sm:text-6xl">
+        <h1 className="mx-auto max-w-3xl text-3xl font-bold tracking-tight text-zinc-900 sm:text-6xl dark:text-white">
           Type faster.{' '}
-          <span className="text-emerald-400">Stop peeking.</span>
+          <span className="text-emerald-600 dark:text-emerald-400">Stop peeking.</span>
         </h1>
 
-        <p className="mx-auto mt-6 max-w-2xl text-lg leading-relaxed text-zinc-400">
+        <p className="mx-auto mt-6 max-w-2xl text-base leading-relaxed text-zinc-600 sm:text-lg dark:text-zinc-400">
           NoPeek uses your webcam to detect when you look at the keyboard and penalizes
           you for every glance. Build real touch typing muscle memory — no cheating.
         </p>
 
-        <div className="mt-10 flex flex-col items-center justify-center gap-4 sm:flex-row">
+        <div className="mt-10 flex flex-col items-stretch justify-center gap-4 sm:flex-row sm:items-center">
           <Link
             to="/calibrate"
-            className="inline-flex items-center gap-2 rounded-lg bg-emerald-600 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-emerald-900/30 transition hover:bg-emerald-500"
+            className="inline-flex items-center justify-center gap-2 rounded-lg bg-emerald-600 px-6 py-3 text-sm font-semibold text-white shadow-lg shadow-emerald-900/20 transition hover:bg-emerald-500"
           >
             Start Typing
             <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
@@ -79,35 +79,35 @@ export default function Home() {
           </Link>
           <Link
             to="/dashboard"
-            className="inline-flex items-center rounded-lg border border-zinc-700 px-6 py-3 text-sm font-medium text-zinc-300 transition hover:border-zinc-600 hover:text-white"
+            className="inline-flex items-center justify-center rounded-lg border border-zinc-300 px-6 py-3 text-sm font-medium text-zinc-700 transition hover:border-zinc-400 hover:text-zinc-900 dark:border-zinc-700 dark:text-zinc-300 dark:hover:border-zinc-600 dark:hover:text-white"
           >
             View dashboard
           </Link>
         </div>
       </section>
 
-      <section className="relative border-t border-zinc-800/80 bg-zinc-900/30 px-6 py-20">
+      <section className="relative border-t border-zinc-200 bg-zinc-100/60 px-4 py-16 sm:px-6 sm:py-20 dark:border-zinc-800/80 dark:bg-zinc-900/30">
         <div className="mx-auto max-w-5xl">
           <div className="text-center">
-            <h2 className="text-2xl font-semibold tracking-tight text-white sm:text-3xl">
+            <h2 className="text-2xl font-semibold tracking-tight text-zinc-900 sm:text-3xl dark:text-white">
               How NoPeek keeps you honest
             </h2>
-            <p className="mx-auto mt-3 max-w-xl text-zinc-400">
+            <p className="mx-auto mt-3 max-w-xl text-zinc-600 dark:text-zinc-400">
               Everything you need to break the peek habit and track real progress.
             </p>
           </div>
 
-          <ul className="mt-14 grid gap-6 sm:grid-cols-2">
+          <ul className="mt-10 grid gap-6 sm:mt-14 sm:grid-cols-2">
             {features.map((feature) => (
               <li
                 key={feature.title}
-                className="rounded-xl border border-zinc-800 bg-zinc-950/60 p-6 transition hover:border-zinc-700 hover:bg-zinc-900/40"
+                className="rounded-xl border border-zinc-200 bg-white p-6 transition hover:border-zinc-300 dark:border-zinc-800 dark:bg-zinc-950/60 dark:hover:border-zinc-700 dark:hover:bg-zinc-900/40"
               >
-                <div className="mb-4 inline-flex rounded-lg bg-emerald-500/10 p-2.5 text-emerald-400">
+                <div className="mb-4 inline-flex rounded-lg bg-emerald-500/10 p-2.5 text-emerald-600 dark:text-emerald-400">
                   {feature.icon}
                 </div>
-                <h3 className="text-lg font-semibold text-white">{feature.title}</h3>
-                <p className="mt-2 text-sm leading-relaxed text-zinc-400">
+                <h3 className="text-lg font-semibold text-zinc-900 dark:text-white">{feature.title}</h3>
+                <p className="mt-2 text-sm leading-relaxed text-zinc-600 dark:text-zinc-400">
                   {feature.description}
                 </p>
               </li>
