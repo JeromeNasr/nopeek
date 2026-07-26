@@ -86,8 +86,10 @@ export default function Calibration() {
 
     return () => {
       cancelled = true
-      if (window.webgazer?.end) {
-        window.webgazer.end()
+      try {
+        window.webgazer?.end?.()
+      } catch (err) {
+        console.warn('WebGazer shutdown failed:', err)
       }
     }
   }, [])
