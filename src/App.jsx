@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { BrowserRouter, NavLink, Route, Routes, useLocation } from 'react-router-dom'
+import ErrorBoundary from './components/ErrorBoundary'
 import ThemeProvider from './context/ThemeProvider'
 import useEyeTracking from './hooks/useEyeTracking'
 import useStreak from './hooks/useStreak'
@@ -162,16 +163,20 @@ function WebcamPreview() {
       return false
     }
 
-    Promise.resolve(window.webgazer.begin()).then(() => {
-      if (!attachStream()) {
-        interval = setInterval(() => {
-          if (attachStream()) {
-            clearInterval(interval)
-            interval = null
-          }
-        }, 200)
-      }
-    })
+    Promise.resolve(window.webgazer.begin())
+      .then(() => {
+        if (!attachStream()) {
+          interval = setInterval(() => {
+            if (attachStream()) {
+              clearInterval(interval)
+              interval = null
+            }
+          }, 200)
+        }
+      })
+      .catch((err) => {
+        console.warn('WebGazer preview unavailable:', err)
+      })
 
     return () => {
       if (interval) clearInterval(interval)
@@ -201,13 +206,15 @@ function AppContent() {
     <div className="flex min-h-screen flex-col bg-zinc-50 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-100">
       <Navbar />
       <main className="flex flex-1 flex-col">
-        <Routes>
-          <Route path="/" element={<Home />} />
-          <Route path="/type" element={<TypingTestRoute />} />
-          <Route path="/calibrate" element={<Calibration />} />
-          <Route path="/dashboard" element={<Dashboard />} />
-          <Route path="/login" element={<Login />} />
-        </Routes>
+        <ErrorBoundary key={location.pathname}>
+          <Routes>
+            <Route path="/" element={<Home />} />
+            <Route path="/type" element={<TypingTestRoute />} />
+            <Route path="/calibrate" element={<Calibration />} />
+            <Route path="/dashboard" element={<Dashboard />} />
+            <Route path="/login" element={<Login />} />
+          </Routes>
+        </ErrorBoundary>
       </main>
       {isTypingRoute && <WebcamPreview />}
     </div>
