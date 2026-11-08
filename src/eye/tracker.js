@@ -111,7 +111,23 @@ export class FaceTracker {
     this._schedule()
   }
 
-  async _loadModel() {
+  /** Swap to the CPU (XNNPACK) delegate when "GPU" turns out to be software-emulated and slow. */
+  async _fallbackToCpu() {
+    if (this._switching || this.stats.delegate !== 'GPU') return
+    this._switching = true
+    try {
+      const old = this.landmarker
+      this.landmarker = null // frames are skipped while swapping
+      old?.close()
+      await this._loadModel('CPU')
+      this.stats.inferenceMs = 0
+      this.stats.frames = 0
+    } finally {
+      this._switching = false
+    }
+  }
+
+  async _loadModel(force = null) {
     // loaded lazily so the ~100 kB JS and ~4 MB model only cost users who enable tracking
     const { FaceLandmarker, FilesetResolver } = await import('@mediapipe/tasks-vision')
     const fileset = await FilesetResolver.forVisionTasks(WASM_PATH)
@@ -126,13 +142,17 @@ export class FaceTracker {
         minFacePresenceConfidence: 0.5,
         minTrackingConfidence: 0.5,
       })
-    try {
-      this.landmarker = await make('GPU')
-      this.stats.delegate = 'GPU'
-    } catch {
-      this.landmarker = await make('CPU')
-      this.stats.delegate = 'CPU'
+    if (force !== 'CPU') {
+      try {
+        this.landmarker = await make('GPU')
+        this.stats.delegate = 'GPU'
+        return
+      } catch {
+        /* fall through to CPU */
+      }
     }
+    this.landmarker = await make('CPU')
+    this.stats.delegate = 'CPU'
   }
 
   _schedule() {
@@ -191,6 +211,10 @@ export class FaceTracker {
     if (!this.running || document.hidden) return
     const now = performance.now()
     const v = this.video
+    if (!this.landmarker) {
+      this._schedule()
+      return
+    }
     if (now - this._lastRun >= this.minGapMs && v.readyState >= 2 && v.currentTime !== this._lastVideoTime) {
       this._lastVideoTime = v.currentTime
       this._lastRun = now
@@ -203,6 +227,7 @@ export class FaceTracker {
       this._fpsWindow.push(now)
       while (this._fpsWindow.length && now - this._fpsWindow[0] > 2000) this._fpsWindow.shift()
       this.stats.fps = this._fpsWindow.length / 2
+      if (this.stats.delegate === 'GPU' && this.stats.frames >= 4 && this.stats.inferenceMs > 90) this._fallbackToCpu()
       // back off if inference is slow so typing stays responsive on modest laptops
       this.minGapMs = this.stats.inferenceMs > 40 ? Math.max(1000 / this.targetFps, this.stats.inferenceMs * 1.8) : 1000 / this.targetFps
       for (const cb of this.listeners) cb({ t: now, features, brightness: this._brightness })

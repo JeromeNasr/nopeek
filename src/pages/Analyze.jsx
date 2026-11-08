@@ -129,12 +129,12 @@ export default function Analyze() {
 
       <section aria-label="Key figures" className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <Stat label="Last WPM" value={Math.round(summary.currentWpm)} hint="most recent run" />
-        <Stat label="Average WPM" value={Math.round(summary.avgWpm)} hint={`last ${Math.min(10, summary.sessions)} runs`} />
+        <Stat label="Average WPM" value={Math.round(summary.avgWpm)} hint={`last ${Math.min(10, summary.sessions)} run${summary.sessions === 1 ? '' : 's'}`} />
         <Stat label="Best WPM" value={Math.round(summary.bestWpm)} />
-        <Stat label="Accuracy" value={r1(summary.avgAccuracy)} unit="%" hint={`last ${Math.min(10, summary.sessions)} runs`} tone={summary.avgAccuracy >= 96 ? 'good' : summary.avgAccuracy < 92 ? 'bad' : undefined} />
+        <Stat label="Accuracy" value={r1(summary.avgAccuracy)} unit="%" hint={`last ${Math.min(10, summary.sessions)} run${summary.sessions === 1 ? '' : 's'}`} tone={summary.avgAccuracy >= 96 ? 'good' : summary.avgAccuracy < 92 ? 'bad' : undefined} />
         <Stat label="Consistency" value={summary.avgConsistency == null ? null : Math.round(summary.avgConsistency)} unit="/100" hint="pace evenness" />
-        <Stat label="Typing time" value={fmtDuration(summary.typingSeconds)} hint={`${summary.sessions} sessions`} />
-        <Stat label="Practice streak" value={summary.streak} unit={summary.streak === 1 ? ' day' : ' days'} hint={`${summary.practiceDays} days practised`} />
+        <Stat label="Typing time" value={fmtDuration(summary.typingSeconds)} hint={`${summary.sessions} session${summary.sessions === 1 ? '' : 's'}`} />
+        <Stat label="Practice streak" value={summary.streak} unit={summary.streak === 1 ? ' day' : ' days'} hint={`${summary.practiceDays} day${summary.practiceDays === 1 ? '' : 's'} practised`} />
         <Stat label="Visual discipline" value={e.avgDiscipline == null ? null : Math.round(e.avgDiscipline)} unit="%" hint={e.measuredSessions ? `${e.measuredSessions} tracked run${e.measuredSessions === 1 ? '' : 's'}` : 'no tracked runs yet'} />
       </section>
 
@@ -148,7 +148,7 @@ export default function Analyze() {
 
       <Card className="mt-8">
         <h2 className="text-lg font-semibold text-white">Progress over time</h2>
-        <p className="mb-3 mt-1 text-sm text-zinc-400">Speed and accuracy for your last {chartData.length} sessions.</p>
+        <p className="mb-3 mt-1 text-sm text-zinc-400">Speed and accuracy for your last {chartData.length} session{chartData.length === 1 ? '' : 's'}.</p>
         <Suspense fallback={<Spinner />}>
           <ProgressChart data={chartData} lines={[{ key: 'wpm', name: 'WPM', color: '#34d399' }, { key: 'accuracy', name: 'Accuracy %', color: '#60a5fa', axis: 'right' }]} rightDomain={[70, 100]} />
         </Suspense>
@@ -192,7 +192,7 @@ export default function Analyze() {
 
         <Card>
           <h2 className="text-lg font-semibold text-white">Typing rhythm</h2>
-          <p className="mb-3 mt-1 text-sm text-zinc-400">Time between key presses over your last {rhythm?.n ?? 0} analysed sessions.</p>
+          <p className="mb-3 mt-1 text-sm text-zinc-400">Time between key presses, from your recent sessions.</p>
           {!rhythm ? <p className="text-sm text-zinc-500">Needs at least two recorded sessions with this version.</p> : (
             <dl className="grid grid-cols-2 gap-3 text-sm">
               <div><dt className="text-zinc-500">Typical gap</dt><dd className="text-xl tabular-nums text-white">{Math.round(rhythm.medianMs)} ms</dd></div>

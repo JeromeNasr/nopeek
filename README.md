@@ -1,16 +1,24 @@
-# React + Vite
+# NoPeek
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A touch-typing trainer: structured lessons, personalised drills built from your own mistakes and rhythm,
+a Monkeytype-style test, and optional **on-device** eye tracking that measures how often you look at the keyboard.
 
-Currently, two official plugins are available:
+## Run
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+```bash
+npm install          # also copies the MediaPipe WASM into public/ (scripts/prepare-assets.mjs)
+cp .env.example .env # optional: Supabase credentials; without them the app runs local-only
+npm run dev
+npm test             # 103+ unit/simulation tests
+npm run test:db      # applies the migration to a throwaway PostgreSQL and checks it (needs postgres binaries)
+npm run lint && npm run build
+```
 
-## React Compiler
+## Database
+Apply `supabase/migrations/20261108000000_nopeek_v2.sql` (additive, idempotent, non-destructive). The app works before
+it is applied (falls back to legacy columns) but new analytics need it. See `docs/REPORT.md`.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+## Docs
+* `docs/REPORT.md` – audit, root causes, architecture, measurements, limitations, what needs physical-webcam validation
+* `docs/EYE_TRACKING.md` – pipeline, classifier, calibration, privacy
+* `NOTICE.md` – licensing (Monkeytype/GPL-3.0 analysis) and third-party notices

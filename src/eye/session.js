@@ -260,7 +260,7 @@ class EyeSession {
 
     if (dirty || t - this._lastPush > 1000) {
       this._lastPush = t
-      this.runtime = { ...this.runtime, fps: tracker.stats.fps, inferenceMs: tracker.stats.inferenceMs }
+      this.runtime = { ...this.runtime, fps: tracker.stats.fps, inferenceMs: tracker.stats.inferenceMs, delegate: tracker.stats.delegate }
       this._emit()
     }
   }
