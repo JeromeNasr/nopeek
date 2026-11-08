@@ -1,9 +1,11 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../supabaseClient'
+import { useAuth } from '../data/useAuth'
 
 export default function Login() {
   const navigate = useNavigate()
+  const { user } = useAuth()
   const [mode, setMode] = useState('signin')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -26,13 +28,14 @@ export default function Login() {
     setMessage(null)
 
     try {
+      if (!supabase) throw new Error('Accounts are not configured for this deployment. Your progress is saved on this device.')
       if (isSignIn) {
         const { error: signInError } = await supabase.auth.signInWithPassword({
           email,
           password,
         })
         if (signInError) throw signInError
-        navigate('/dashboard')
+        navigate('/analyze')
       } else {
         const { data, error: signUpError } = await supabase.auth.signUp({
           email,
@@ -41,7 +44,7 @@ export default function Login() {
         if (signUpError) throw signUpError
 
         if (data.session) {
-          navigate('/dashboard')
+          navigate('/analyze')
         } else {
           setMessage('Check your email to confirm your account.')
         }
@@ -53,6 +56,22 @@ export default function Login() {
     }
   }
 
+  if (user) {
+    return (
+      <div className="mx-auto flex max-w-md flex-col px-6 py-16">
+        <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-8">
+          <h1 className="text-2xl font-semibold tracking-tight text-white">You&apos;re signed in</h1>
+          <p className="mt-2 text-sm text-zinc-400">{user.email}</p>
+          <p className="mt-2 text-sm text-zinc-500">Sessions and your keyboard setup sync to your account. Eye-tracking calibration and the camera stay on this device.</p>
+          <div className="mt-6 flex gap-3">
+            <button type="button" onClick={() => navigate('/analyze')} className="rounded-lg bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-zinc-950 hover:bg-emerald-400">View analytics</button>
+            <button type="button" onClick={async () => { await supabase.auth.signOut(); navigate('/') }} className="rounded-lg border border-zinc-700 px-4 py-2.5 text-sm text-zinc-300 hover:border-zinc-500">Sign out</button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
   return (
     <div className="mx-auto flex max-w-md flex-col px-6 py-16">
       <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-8 shadow-xl shadow-black/20">
@@ -62,7 +81,7 @@ export default function Login() {
         <p className="mt-2 text-sm text-zinc-400">
           {isSignIn
             ? 'Sign in to sync your progress across devices.'
-            : 'Sign up to save your typing stats and calibration.'}
+            : 'Sign up to keep your sessions and keyboard setup across devices.'}
         </p>
 
         <div className="mt-6 flex rounded-lg bg-zinc-950 p-1">
@@ -141,7 +160,7 @@ export default function Login() {
           <button
             type="submit"
             disabled={loading}
-            className="w-full rounded-lg bg-emerald-600 px-4 py-2.5 text-sm font-medium text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-50"
+            className="w-full rounded-lg bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-zinc-950 transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {loading ? 'Please wait…' : isSignIn ? 'Sign in' : 'Create account'}
           </button>

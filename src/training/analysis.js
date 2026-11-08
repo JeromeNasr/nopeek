@@ -7,7 +7,7 @@
 // assignment), not a detection of the finger actually used.
 
 import { median, mean, percentile, stdDev, consistencyOf, roundTo } from '../engine/stats.js'
-import { charToKey, fingerOfCode, profileFingerOfCode, DEFAULT_KEYBOARD_PROFILE } from './keyboard.js'
+import { charToKey, profileFingerOfCode, DEFAULT_KEYBOARD_PROFILE } from './keyboard.js'
 
 const MAX_DT = 2000 // longer gaps are pauses/thinking, not typing speed
 const MAX_BIGRAMS = 80

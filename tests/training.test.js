@@ -317,3 +317,72 @@ describe('recommendations', () => {
     expect(buildRecommendations({ sessions: high, profile }).recs.some((r) => r.id === 'visual')).toBe(false)
   })
 })
+
+import { currentStreak, evaluateGoal, suggestGoals } from '../src/training/goals.js'
+
+describe('goals', () => {
+  const day = (offset, extra = {}) => ({ created_at: new Date(2026, 10, 8 - offset, 10).toISOString(), wpm: 40, accuracy: 96, ...extra })
+  const now = new Date(2026, 10, 8, 18)
+  it('streak counts consecutive days and tolerates "not yet today"', () => {
+    expect(currentStreak([day(0), day(1), day(2)], now)).toBe(3)
+    expect(currentStreak([day(1), day(2)], now)).toBe(2)
+    expect(currentStreak([day(2), day(3)], now)).toBe(0)
+    expect(currentStreak([], now)).toBe(0)
+  })
+  it('wpm goal only counts runs that were accurate enough', () => {
+    const s = [day(0, { wpm: 80, accuracy: 80 }), day(1, { wpm: 45, accuracy: 97 })]
+    expect(evaluateGoal({ type: 'wpm', target: 50 }, { sessions: s, now }).current).toBe(45)
+    expect(evaluateGoal({ type: 'wpm', target: 40 }, { sessions: s, now }).done).toBe(true)
+  })
+  it('discipline goal uses only measured sessions and needs data', () => {
+    const unmeasured = [1, 2, 3, 4].map((i) => day(i, { tracking: { status: 'unavailable' } }))
+    expect(evaluateGoal({ type: 'discipline', target: 90 }, { sessions: unmeasured, now }).needsData).toBe(true)
+    const measured = [1, 2, 3].map((i) => day(i, { tracking: { status: 'measured', discipline: 96 } }))
+    expect(evaluateGoal({ type: 'discipline', target: 95 }, { sessions: measured, now }).done).toBe(true)
+  })
+  it('suggests a goal above the current best', () => {
+    const g = suggestGoals({ sessions: [day(0, { wpm: 42 })], passedLessons: 4 })
+    expect(g[0].type).toBe('wpm')
+    expect(g[0].target).toBeGreaterThan(42)
+  })
+})
+
+import { narrative, summarizeHistory } from '../src/training/dashboard.js'
+
+describe('dashboard summary and narrative', () => {
+  const mkS = (i, o = {}) => ({ created_at: new Date(2026, 10, 1 + i, 10).toISOString(), wpm: 40, accuracy: 96, consistency: 70, duration_seconds: 30, tracking: { status: 'unavailable' }, ...o })
+  const now = new Date(2026, 10, 20)
+
+  it('does not fabricate eye numbers: legacy and unmeasured rows are excluded', () => {
+    const rows = [
+      mkS(0, { tracking: { status: 'legacy', legacyDiscipline: 100 } }),
+      mkS(1, { tracking: { status: 'unavailable' } }),
+      mkS(2, { tracking: { status: 'disabled' } }),
+      mkS(3, { tracking: { status: 'measured', discipline: 90, peeksPerMin: 2, coverage: 0.9 } }),
+    ]
+    const s = summarizeHistory(rows, now)
+    expect(s.eye.measuredSessions).toBe(1)
+    expect(s.eye.avgDiscipline).toBe(90)
+    expect(s.eye.status).toMatchObject({ measured: 1, unavailable: 1, disabled: 1, unknown: 1 })
+  })
+
+  it('reports no improvement trend until there are enough runs', () => {
+    expect(summarizeHistory([mkS(0), mkS(1)], now).trend).toBeNull()
+    const rows = Array.from({ length: 10 }, (_, i) => mkS(i, { wpm: 30 + i * 2 }))
+    expect(summarizeHistory(rows, now).trend.wpm).toBeGreaterThan(5)
+  })
+
+  it('narrative gives evidence for each claim and stays silent without data', () => {
+    const profile = normalizeProfile({})
+    const few = narrative(summarizeHistory([mkS(0)], now), { recs: [], weak: null }, profile)
+    expect(few.insufficient).toBe(true)
+    expect(few.good).toEqual([])
+    const rows = Array.from({ length: 10 }, (_, i) => mkS(i, { wpm: 30 + i * 2, accuracy: 97 + (i % 2) }))
+    const n = narrative(summarizeHistory(rows, now), { recs: [], weak: { enoughData: false } }, profile)
+    expect(n.good.some((g) => /Accurate/.test(g.text))).toBe(true)
+    expect(n.improved.some((g) => g.text === 'Speed')).toBe(true)
+    for (const item of [...n.good, ...n.improved]) expect(item.evidence).toBeTruthy()
+    // no eye claims when nothing was measured
+    expect([...n.good, ...n.bad, ...n.improved].some((i) => /discipline|keyboard/i.test(i.text))).toBe(false)
+  })
+})

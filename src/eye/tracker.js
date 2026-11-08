@@ -175,6 +175,17 @@ export class FaceTracker {
     }
   }
 
+  _detect(v, now) {
+    try {
+      const res = this.landmarker.detectForVideo(v, now)
+      const lm = res.faceLandmarks?.[0]
+      const matrix = res.facialTransformationMatrixes?.[0]?.data ?? null
+      return lm ? extractFeatures(lm, matrix, v.videoWidth, v.videoHeight) : null
+    } catch {
+      return null
+    }
+  }
+
   _tick() {
     this._raf = null
     if (!this.running || document.hidden) return
@@ -185,15 +196,7 @@ export class FaceTracker {
       this._lastRun = now
       this._sampleBrightness(now)
       const t0 = performance.now()
-      let features = null
-      try {
-        const res = this.landmarker.detectForVideo(v, now)
-        const lm = res.faceLandmarks?.[0]
-        const matrix = res.facialTransformationMatrixes?.[0]?.data ?? null
-        features = lm ? extractFeatures(lm, matrix, v.videoWidth, v.videoHeight) : null
-      } catch {
-        features = null
-      }
+      const features = this._detect(v, now)
       const dt = performance.now() - t0
       this.stats.inferenceMs = this.stats.inferenceMs ? this.stats.inferenceMs * 0.9 + dt * 0.1 : dt
       this.stats.frames++

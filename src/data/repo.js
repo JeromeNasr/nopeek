@@ -235,3 +235,22 @@ export function readGoals() {
 export function saveGoals(goals) {
   return writeJSON(GOALS_KEY, goals)
 }
+
+// ---- layout observations (for suggesting the OS layout from real typing) -------
+
+const OBS_KEY = 'layoutObs.v1'
+
+export function readLayoutObservations() {
+  return readJSON(OBS_KEY, { pairs: {}, isoSeen: false })
+}
+
+export function mergeLayoutObservations(pairs, isoSeen) {
+  const cur = readLayoutObservations()
+  for (const [k, n] of Object.entries(pairs)) cur.pairs[k] = (cur.pairs[k] ?? 0) + n
+  // keep the table bounded
+  const entries = Object.entries(cur.pairs)
+  if (entries.length > 400) cur.pairs = Object.fromEntries(entries.sort((a, b) => b[1] - a[1]).slice(0, 300))
+  cur.isoSeen = cur.isoSeen || isoSeen
+  writeJSON(OBS_KEY, cur)
+  return cur
+}

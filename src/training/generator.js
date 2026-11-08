@@ -21,10 +21,6 @@ export function charsForCodes(layoutId, codes) {
   return out
 }
 
-function allowedSet(layoutId, codes) {
-  return new Set(charsForCodes(layoutId, codes))
-}
-
 /** Words from the corpus whose letters are all within `chars`. */
 export function wordsUsing(chars, { minLen = 2, maxLen = 12, pool = english } = {}) {
   const set = chars instanceof Set ? chars : new Set(chars)

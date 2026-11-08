@@ -80,7 +80,6 @@ export function projectScore(profile, f, offset = null) {
  * @param {{screen: object[], down: object[], brightness?: number|null}} data feature samples for each phase
  */
 export function buildProfile({ screen, down, brightness = null }) {
-  const issues = []
   const s = cleanSamples(screen)
   const d = cleanSamples(down)
   const base = {

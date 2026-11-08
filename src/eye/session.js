@@ -19,7 +19,7 @@ const PUSH_INTERVAL_MS = 200
 const RELEASE_DELAY_MS = 3000
 
 function emptyLive() {
-  return { state: STATE.UNAVAILABLE, label: 'none', score: null, confidence: 0, reason: null, candidate: null, since: null }
+  return { state: STATE.UNAVAILABLE, label: 'none', score: null, confidence: 0, reason: null, candidate: null, since: null, drift: 0 }
 }
 
 class EyeSession {
@@ -252,6 +252,7 @@ class EyeSession {
         this.live = {
           state: out.state, label: out.label, score: out.score, confidence: out.confidence,
           reason: out.reason ?? null, candidate: out.candidate, since: out.since,
+          drift: this.gaze.driftRatio(),
         }
         dirty = true
       }

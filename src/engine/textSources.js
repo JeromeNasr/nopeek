@@ -72,7 +72,7 @@ export function normalizeTypography(text) {
     .replace(/[“”‟]/g, '"')
     .replace(/[–—−]/g, '-')
     .replace(/…/g, '...')
-    .replace(/[   ]/g, ' ')
+    .replace(/[\u00A0\u2007\u202F]/g, ' ')
 }
 
 /** Custom text -> words. Whitespace (incl. newlines) separates words. */
