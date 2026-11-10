@@ -27,3 +27,12 @@ never stored; only calibration numbers (local) and per-session summary counts ar
 
 **Why not a Web Worker**: MediaPipe's loader uses `importScripts`, which does not work in module workers under Vite; the
 per-frame cost is dominated by the delegate. Inference runs on the main thread, throttled, with GPU→CPU fallback.
+
+## v3 changes
+* **Learned eye-look signal**: MediaPipe blendshapes (`eyeLookDown − eyeLookUp`) join head pitch and iris geometry as a fourth signal.
+* **Regularised LDA** replaces independent signal weighting, so correlated signals are not double counted (pooled covariance, 20 % shrinkage, suppressor weights removed).
+* **Cross-validated quality**: every capture step (5 dots, typing, 2 keyboard looks) is held out in turn; the grade uses the worse of in-sample and held-out error.
+* **Blink vs keyboard look**: eyelids drop when looking down, so blink thresholds are set relative to the user's own keyboard-look eyelid opening and blink score.
+* **One-Euro filter** on the score: less jitter, a real look still crosses the threshold within ~250 ms of filter lag (tested).
+* **Re-centre**: 1.5 s of screen-looking resets the baseline after a posture change, without recalibrating.
+* **Peek triggers**: keyboard looks are matched to the keys being typed (`analysis.attributePeeks`), giving "keys you look down for".

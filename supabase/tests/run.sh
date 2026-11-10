@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Verifies the NoPeek v2 migration against a throwaway local PostgreSQL.
+# Verifies the TouchType v2 migration against a throwaway local PostgreSQL.
 # Usage: PGBIN=/usr/lib/postgresql/16/bin supabase/tests/run.sh
 # Needs a postgres binary set; must run as root (uses `su postgres`) or as a normal user.
 set -euo pipefail

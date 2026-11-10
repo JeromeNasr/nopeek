@@ -121,7 +121,7 @@ export function generateLessonWords(lesson, { layout = 'qwerty-us', seed = lesso
       return takeUnique(rng, () => {
         if (lesson.guided || real.length < 12) return pseudoWord(rng, layout, chars, focus, minLen, maxLen)
         if (focusReal.length >= 6 && rng.chance(0.7)) return rng.pick(focusReal)
-        if (lesson.preferReal || rng.chance(0.65)) return rng.pick(real)
+        if (lesson.preferReal || rng.chance(real.length >= 40 ? 0.92 : 0.65)) return rng.pick(real)
         return pseudoWord(rng, layout, chars, focus, minLen, maxLen)
       }, n)
     }

@@ -38,6 +38,7 @@ function Runner({ spec }) {
         makeRun={makeRun}
         meta={{ mode: 'practice', modeKey: `practice-${spec.kind}`, practiceKind: spec.kind, title: 'Practice results' }}
         showKeyboard={spec.kind === 'keys' || spec.kind === 'finger'}
+        metronome={spec.kind === 'rhythm'}
       />
     </div>
   )
@@ -64,7 +65,7 @@ export default function Practice() {
         <EmptyState title={sessions.length ? 'No clear weakness found yet' : 'Nothing personalised yet'}>
           {sessions.length
             ? 'Your recent sessions do not show a weakness that is statistically supported. Keep practising and recommendations will appear when there is enough evidence.'
-            : 'Complete a lesson or a test and NoPeek will start finding patterns in your mistakes, rhythm and eye data.'}
+            : 'Complete a lesson or a test and TouchType will start finding patterns in your mistakes, rhythm and eye data.'}
         </EmptyState>
       ) : (
         <ul className="grid gap-3 sm:grid-cols-2">
@@ -86,10 +87,10 @@ export default function Practice() {
       )}
 
       <h2 className="mb-3 mt-10 text-lg font-semibold text-white">Focus drills</h2>
-      <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      <ul className="stagger grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {GENERIC.map((g) => (
           <li key={g.kind}>
-            <button type="button" onClick={() => start({ kind: g.kind })} className="h-full w-full rounded-xl border border-zinc-800 bg-zinc-900/40 p-4 text-left transition hover:border-zinc-600">
+            <button type="button" onClick={() => start({ kind: g.kind })} className="card card-hover h-full w-full p-4 text-left" style={{ animation: 'none' }}>
               <p className="font-medium text-white">{g.title}</p>
               <p className="mt-1 text-sm text-zinc-500">{g.desc}</p>
             </button>
@@ -103,7 +104,7 @@ export default function Practice() {
           <p className="mt-1 text-sm text-zinc-500">Type the letters you want to drill.</p>
           <form className="mt-3 flex gap-2" onSubmit={(e) => { e.preventDefault(); const chars = [...new Set(keysInput.toLowerCase().replace(/[^a-z]/g, ''))]; if (chars.length) start({ kind: 'keys', chars }) }}>
             <input aria-label="Letters to practise" value={keysInput} onChange={(e) => setKeysInput(e.target.value)} placeholder="e.g. qzx" maxLength={12}
-              className="w-full rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 font-mono text-sm outline-none focus:border-emerald-600" />
+              className="w-full rounded-xl border border-white/10 bg-zinc-950/60 px-3 py-2 font-mono text-sm outline-none focus:border-emerald-600" />
             <Button type="submit" size="sm" disabled={!/[a-z]/i.test(keysInput)}>Start</Button>
           </form>
         </Card>

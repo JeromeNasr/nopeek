@@ -390,7 +390,7 @@ export default function SessionRunner({ makeRun, meta, lesson = null, showKeyboa
               ? <>Next key: use your <strong className="text-white">{FINGERS[nextFinger].label.toLowerCase()}</strong>{nextKey.shift ? ' (and the opposite Shift)' : ''}</>
               : engine.currentTyped.length >= engine.currentWord.length ? 'Space with your thumb' : ''}
           </p>
-          <Keyboard profile={profile} highlight={lesson?.keys ?? null} target={showTarget ? targets : []} />
+          <Keyboard compact profile={profile} highlight={lesson?.keys ?? null} target={showTarget ? targets : []} />
         </div>
       )}
 

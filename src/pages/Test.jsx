@@ -1,42 +1,17 @@
 import { useCallback, useEffect, useState } from 'react'
 import SessionRunner from '../components/SessionRunner.jsx'
-import { Button, Card } from '../components/ui.jsx'
-import { cx } from '../lib/cx.js'
+import PrefsPanel from '../components/PrefsPanel.jsx'
+import { Button, Card, Seg, Toggle } from '../components/ui.jsx'
 import { readJSON, writeJSON } from '../data/localStore.js'
 import { english } from '../data/english.js'
 import { TIME_OPTIONS, WORD_OPTIONS, codeWords, generateWords, makeSupplier, parseCustomText, quoteWords } from '../engine/textSources.js'
 
 const DEFAULTS = { mode: 'time', time: 30, words: 25, source: 'words', punctuation: false, numbers: false, keyboard: false, customText: '' }
 
-function Seg({ options, value, onChange, label, format = (v) => v }) {
-  return (
-    <div role="radiogroup" aria-label={label} className="inline-flex overflow-hidden rounded-lg border border-zinc-800 bg-zinc-900/60">
-      {options.map((o) => {
-        const v = typeof o === 'object' ? o.id : o
-        const text = typeof o === 'object' ? o.label : format(o)
-        return (
-          <button
-            key={v} type="button" role="radio" aria-checked={value === v} onClick={() => onChange(v)}
-            className={cx('px-3 py-1.5 text-sm transition', value === v ? 'bg-emerald-500/15 font-semibold text-emerald-300' : 'text-zinc-400 hover:text-zinc-100')}
-          >{text}</button>
-        )
-      })}
-    </div>
-  )
-}
-
-function Toggle({ label, checked, onChange, hint }) {
-  return (
-    <button type="button" role="switch" aria-checked={checked} onClick={() => onChange(!checked)} title={hint}
-      className={cx('rounded-lg border px-3 py-1.5 text-sm transition', checked ? 'border-emerald-600/60 bg-emerald-500/10 text-emerald-300' : 'border-zinc-800 text-zinc-400 hover:text-zinc-100')}>
-      {label}
-    </button>
-  )
-}
-
 export default function Test() {
   const [cfg, setCfg] = useState(() => ({ ...DEFAULTS, ...(readJSON('test.settings') ?? {}) }))
   const [draft, setDraft] = useState(cfg.customText)
+  const [showPrefs, setShowPrefs] = useState(false)
   const [seed] = useState(() => Math.random().toString(36).slice(2))
   useEffect(() => { writeJSON('test.settings', cfg) }, [cfg])
   const set = (patch) => setCfg((c) => ({ ...c, ...patch }))
@@ -65,7 +40,7 @@ export default function Test() {
 
   return (
     <div className="mx-auto max-w-5xl px-6 py-8">
-      <div className="mb-8 flex flex-wrap items-center justify-center gap-3" aria-label="Test options">
+      <div className="chrome mb-8 flex flex-wrap items-center justify-center gap-2.5" aria-label="Test options">
         <Seg label="Mode" value={cfg.mode} onChange={(v) => set({ mode: v })} options={[{ id: 'time', label: 'Time' }, { id: 'words', label: 'Words' }, { id: 'custom', label: 'Custom' }]} />
         {cfg.mode === 'time' && <Seg label="Duration" value={cfg.time} onChange={(v) => set({ time: v })} options={TIME_OPTIONS} format={(v) => `${v}s`} />}
         {cfg.mode === 'words' && <Seg label="Word count" value={cfg.words} onChange={(v) => set({ words: v })} options={WORD_OPTIONS} />}
@@ -76,15 +51,18 @@ export default function Test() {
             <Toggle label="# numbers" checked={cfg.numbers} onChange={(v) => set({ numbers: v })} hint="Mix numbers into the text" />
           </>
         )}
-        <Toggle label="Keyboard guide" checked={cfg.keyboard} onChange={(v) => set({ keyboard: v })} hint="Show the on-screen keyboard with the next key highlighted" />
+        <Toggle label="Keyboard hints" checked={cfg.keyboard} onChange={(v) => set({ keyboard: v })} hint="Show the on-screen keyboard with the next key highlighted" />
+        <Toggle label="Preferences" checked={showPrefs} onChange={setShowPrefs} hint="Caret, sounds, pace ghost, colours" />
       </div>
+
+      {showPrefs && <PrefsPanel className="mx-auto mb-8 max-w-2xl" />}
 
       {cfg.mode === 'custom' && (
         <Card className="mb-6">
           <label htmlFor="custom-text" className="text-sm font-medium text-zinc-200">Your text</label>
           <textarea
             id="custom-text" value={draft} onChange={(e) => setDraft(e.target.value)} rows={4}
-            className="mt-2 w-full rounded-lg border border-zinc-800 bg-zinc-950 p-3 font-mono text-sm text-zinc-200 outline-none focus:border-emerald-600"
+            className="mt-2 w-full rounded-xl border border-white/10 bg-zinc-950/60 p-3 font-mono text-sm text-zinc-200 outline-none focus:border-emerald-600"
             placeholder="Paste or write the text you want to practise. Smart quotes and dashes are converted to keys you can type."
           />
           <div className="mt-3 flex items-center justify-between text-xs text-zinc-500">

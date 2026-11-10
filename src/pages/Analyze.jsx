@@ -109,6 +109,7 @@ export default function Analyze() {
   const w = rec.weak
   const e = summary.eye
   const eyeNow = describeEye(eyeState)
+  const triggers = rec.triggers ?? []
   const hasKeyData = w?.enoughData
 
   return (
@@ -159,7 +160,7 @@ export default function Analyze() {
         <Card>
           <h2 className="text-lg font-semibold text-white">Problem keys</h2>
           <p className="mb-3 mt-1 text-sm text-zinc-400">Keys with an error rate clearly above your own average.</p>
-          {!hasKeyData ? <p className="text-sm text-zinc-500">Not enough data yet – needs about 150 key presses recorded with the current NoPeek version ({w?.totalPresses ?? 0} so far).</p> : (
+          {!hasKeyData ? <p className="text-sm text-zinc-500">Not enough data yet – needs about 150 key presses recorded with the current TouchType version ({w?.totalPresses ?? 0} so far).</p> : (
             <Table head={['Key', 'Errors', 'Presses', 'Finger']} empty="No key stands out as a problem."
               rows={w.keys.slice(0, 8).map((k) => [codeLabel(layout, k.code), `${Math.round(k.rate * 100)}%`, k.n, FINGERS[k.finger]?.label ?? '—'])} />
           )}
@@ -225,7 +226,17 @@ export default function Analyze() {
         {eyeData.length >= 2 ? (
           <div className="mt-4"><Suspense fallback={<Spinner />}><ProgressChart height={220} data={eyeData} lines={[{ key: 'discipline', name: 'Visual discipline %', color: '#fbbf24', axis: 'left' }]} /></Suspense></div>
         ) : <p className="mt-4 text-sm text-zinc-500">{e.measuredSessions === 0 ? 'No measured runs yet. Calibrate in Setup and type with eye tracking on.' : 'At least two measured runs are needed for a trend.'}</p>}
-        {e.status.unknown > 0 && <p className="mt-3 text-xs text-zinc-600">{e.status.unknown} older session{e.status.unknown === 1 ? '' : 's'} (recorded before NoPeek stored tracking status) are not included in any eye figures, because earlier versions saved 100% when no tracking happened.</p>}
+        <div className="mt-5 border-t border-white/[0.06] pt-4">
+          <h3 className="font-medium text-white">Keys you look down for</h3>
+          <p className="mt-1 text-sm text-zinc-400">Each keyboard look is matched to what you were typing at that moment. Keys listed here attract looks out of proportion to how often you type them.</p>
+          {triggers.length === 0 ? <p className="mt-3 text-sm text-zinc-500">{e.measuredSessions === 0 ? 'Needs tracked runs.' : 'No key stands out yet – this needs a handful of recorded keyboard looks.'}</p> : (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {triggers.slice(0, 8).map((k) => <Badge key={k.code} tone="info">{codeLabel(layout, k.code)} · {k.looks} looks · {k.lift.toFixed(1)}×</Badge>)}
+              <Button size="sm" variant="secondary" to="/improve">Drill these</Button>
+            </div>
+          )}
+        </div>
+        {e.status.unknown > 0 && <p className="mt-3 text-xs text-zinc-600">{e.status.unknown} older session{e.status.unknown === 1 ? '' : 's'} (recorded before TouchType stored tracking status) are not included in any eye figures, because earlier versions saved 100% when no tracking happened.</p>}
       </Card>
 
       {lessonRows.length > 0 && (
@@ -237,7 +248,7 @@ export default function Analyze() {
       )}
 
       <Card className="mt-8 overflow-hidden !p-0">
-        <div className="border-b border-zinc-800 px-5 py-4"><h2 className="text-lg font-semibold text-white">Recent sessions</h2></div>
+        <div className="border-b border-white/[0.08] px-5 py-4"><h2 className="text-lg font-semibold text-white">Recent sessions</h2></div>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[720px] text-left text-sm">
             <thead className="bg-zinc-950/60 text-xs uppercase tracking-wider text-zinc-500"><tr>

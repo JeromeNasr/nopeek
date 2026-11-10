@@ -34,7 +34,7 @@ const FN_ROW = [{ code: 'Escape', label: 'Esc' }, { spacer: 1 }, ...Array.from({
  * @param {boolean} [props.showFingers]  colour keys by finger
  * @param {string|null} [props.focusFinger]  emphasise a single finger's keys
  */
-function KeyboardView({ profile, highlight = null, target = null, showFingers = true, focusFinger = null, pressed = null, onKeyClick = null }) {
+function KeyboardView({ profile, highlight = null, target = null, showFingers = true, focusFinger = null, pressed = null, onKeyClick = null, compact = false }) {
   const ff = FORM_FACTORS[profile.formFactor] ?? FORM_FACTORS.full
   const iso = profile.physical === 'iso'
   const rows = mainRows(iso)
@@ -75,12 +75,12 @@ function KeyboardView({ profile, highlight = null, target = null, showFingers = 
   return (
     <div className="flex flex-wrap items-start gap-x-6 gap-y-3 overflow-x-auto pb-1" role="group" aria-label={`Keyboard map, ${profile.layout}, ${profile.formFactor}`}>
       <div className="kb">
-        {ff.fnRow && <div className="kb-row">{FN_ROW.map(renderKey)}</div>}
+        {ff.fnRow && !compact && <div className="kb-row">{FN_ROW.map(renderKey)}</div>}
         {rows.map((row, r) => (
           <div className="kb-row" key={r}>{row.map(renderKey)}</div>
         ))}
       </div>
-      {ff.arrows && (
+      {ff.arrows && !compact && (
         <div className="kb self-end">
           <div className="kb-row"><div style={{ width: 'var(--u)' }} /><div className="kb-key" style={{ width: 'var(--u)' }}>↑</div></div>
           <div className="kb-row">
@@ -88,7 +88,7 @@ function KeyboardView({ profile, highlight = null, target = null, showFingers = 
           </div>
         </div>
       )}
-      {ff.numpad && (
+      {ff.numpad && !compact && (
         <div className="kb self-end" aria-label="Numpad">
           {[['7', '8', '9'], ['4', '5', '6'], ['1', '2', '3']].map((r) => (
             <div className="kb-row" key={r.join('')}>{r.map((d) => <div key={d} className="kb-key" style={{ width: 'var(--u)' }}>{d}</div>)}</div>
@@ -111,7 +111,7 @@ export function FingerLegend({ focusFinger, onFocus }) {
             type="button"
             onClick={() => onFocus?.(focusFinger === f ? null : f)}
             aria-pressed={focusFinger === f}
-            className={`flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs transition ${focusFinger === f ? 'border-white/60 bg-zinc-800 text-white' : 'border-zinc-800 text-zinc-400 hover:border-zinc-600'}`}
+            className={`flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs transition ${focusFinger === f ? 'border-white/60 bg-zinc-800 text-white' : 'border-white/[0.08] text-zinc-400 hover:border-zinc-600'}`}
           >
             <span className="h-2.5 w-2.5 rounded-sm" style={{ background: FINGER_COLORS[f] }} aria-hidden="true" />
             {FINGERS[f].label} <span className="text-zinc-600">{FINGERS[f].short}</span>

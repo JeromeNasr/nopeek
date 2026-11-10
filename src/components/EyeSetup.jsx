@@ -77,10 +77,10 @@ function ScreenPhase({ onDone, onCancel }) {
   const captured = useRef(false)
   const pct = useTimeline(true, DOT_MS, () => {
     const { samples: s, brightness: b } = eye.endCapture()
-    samples.current.push(...s)
+    samples.current.push(s)
     if (b != null) brightness.current.push(b)
     captured.current = false
-    if (i + 1 >= SCREEN_DOTS.length) onDone({ samples: samples.current, brightness: brightness.current })
+    if (i + 1 >= SCREEN_DOTS.length) onDone({ segments: samples.current, brightness: brightness.current })
     else setI(i + 1)
   }, i)
   useEffect(() => {
@@ -123,13 +123,13 @@ function TypePhase({ onDone, onCancel }) {
 function DownPhase({ onDone, onCancel }) {
   const [round, setRound] = useState(0)
   const [phase, setPhase] = useState('ready') // ready | countdown | capture
-  const acc = useRef({ samples: [], brightness: [] })
+  const acc = useRef({ segments: [], brightness: [] })
   const countPct = useTimeline(phase === 'countdown', 2400, () => setPhase('capture'), round)
   const count = Math.max(1, 3 - Math.floor(countPct * 3))
   const captured = useRef(false)
   const pct = useTimeline(phase === 'capture', DOWN_MS, () => {
     const r = eye.endCapture()
-    acc.current.samples.push(...r.samples)
+    acc.current.segments.push(r.samples)
     if (r.brightness != null) acc.current.brightness.push(r.brightness)
     captured.current = false
     if (round >= 1) onDone(acc.current)
@@ -153,6 +153,7 @@ function DownPhase({ onDone, onCancel }) {
 
 function LiveCheck() {
   const s = useEye()
+  const [recentering, setRecentering] = useState(null) // null | 'busy' | 'done' | 'failed'
   const d = describeEye(s)
   const tone = { good: 'bg-emerald-500/15 text-emerald-300', bad: 'bg-amber-500/15 text-amber-200', info: 'bg-sky-500/15 text-sky-300', warn: 'bg-zinc-800 text-zinc-300', off: 'bg-zinc-800 text-zinc-400' }[d.tone]
   const score = s.live.score
@@ -167,6 +168,15 @@ function LiveCheck() {
         </div>
         <div className="mt-1 flex justify-between text-xs text-zinc-600"><span>screen</span><span>keyboard</span></div>
       </div>
+      <div className="mt-4 flex flex-wrap items-center gap-3">
+        <Button size="sm" variant="secondary" disabled={recentering === 'busy' || s.runtime.phase !== 'running'}
+          onClick={async () => { setRecentering('busy'); setRecentering((await eye.recenter()) ? 'done' : 'failed') }}>
+          {recentering === 'busy' ? 'Look at the screen…' : 'Re-centre'}
+        </Button>
+        <span className="text-xs text-zinc-500">
+          {recentering === 'done' ? 'Re-centred to your current posture.' : recentering === 'failed' ? 'Could not see your face clearly – try again.' : 'Moved your chair or laptop? Look at the screen and re-centre in 1.5 s – no full recalibration needed.'}
+        </span>
+      </div>
       <dl className="mt-3 grid grid-cols-3 gap-2 text-xs text-zinc-500">
         <div><dt>Camera</dt><dd className="text-zinc-300">{s.runtime.fps ? `${s.runtime.fps.toFixed(0)} fps` : '—'}</dd></div>
         <div><dt>Processing</dt><dd className="text-zinc-300">{s.runtime.inferenceMs ? `${s.runtime.inferenceMs.toFixed(0)} ms/frame` : '—'}</dd></div>
@@ -180,7 +190,7 @@ export default function EyeSetup() {
   const s = useEye()
   const [step, setStep] = useState('idle') // idle | position | screen | type | down | result
   const [error, setError] = useState(null)
-  const data = useRef({ screen: [], down: [], brightness: [] })
+  const data = useRef({ screenSegments: [], downSegments: [], brightness: [] })
   const [result, setResult] = useState(null)
   const [positionOk, setPositionOk] = useState(0)
 
@@ -211,7 +221,8 @@ export default function EyeSetup() {
 
   function finish() {
     const brightness = data.current.brightness.length ? data.current.brightness.reduce((a, b) => a + b, 0) / data.current.brightness.length : null
-    const profile = eye.finishCalibration({ screen: data.current.screen, down: data.current.down, brightness })
+    const { screenSegments, downSegments } = data.current
+    const profile = eye.finishCalibration({ screen: screenSegments.flat(), down: downSegments.flat(), screenSegments, downSegments, brightness })
     eye.setMode('idle')
     setResult(profile)
     setStep('result')
@@ -222,9 +233,9 @@ export default function EyeSetup() {
 
   return (
     <div className="space-y-4">
-      {step === 'screen' && <ScreenPhase onCancel={cancel} onDone={(r) => { data.current.screen = r.samples; data.current.brightness = [...r.brightness]; setStep('type') }} />}
-      {step === 'type' && <TypePhase onCancel={cancel} onDone={(r) => { data.current.screen = [...data.current.screen, ...r.samples]; setStep('down') }} />}
-      {step === 'down' && <DownPhase onCancel={cancel} onDone={(r) => { data.current.down = r.samples; data.current.brightness = [...data.current.brightness, ...r.brightness]; finish() }} />}
+      {step === 'screen' && <ScreenPhase onCancel={cancel} onDone={(r) => { data.current.screenSegments = r.segments; data.current.brightness = [...r.brightness]; setStep('type') }} />}
+      {step === 'type' && <TypePhase onCancel={cancel} onDone={(r) => { data.current.screenSegments = [...data.current.screenSegments, r.samples]; setStep('down') }} />}
+      {step === 'down' && <DownPhase onCancel={cancel} onDone={(r) => { data.current.downSegments = r.segments; data.current.brightness = [...data.current.brightness, ...r.brightness]; finish() }} />}
 
       <Card>
         <div className="flex flex-wrap items-start justify-between gap-3">
@@ -241,9 +252,9 @@ export default function EyeSetup() {
         {step === 'idle' && (
           <div className="mt-4 space-y-4">
             {s.profile?.quality && (
-              <div className="rounded-lg border border-zinc-800 p-4 text-sm">
+              <div className="rounded-lg border border-white/[0.08] p-4 text-sm">
                 <p className="text-zinc-200">{describeLevel(level)}</p>
-                {s.profile.quality.dPrime != null && <p className="mt-1 text-xs text-zinc-500">Separation score {s.profile.quality.dPrime} · measured on {s.profile.counts.screen + s.profile.counts.down} calibration frames · {new Date(s.profile.createdAt).toLocaleDateString()}. These rates describe the calibration data itself and are not a guarantee of real-world accuracy.</p>}
+                {s.profile.quality.dPrime != null && <p className="mt-1 text-xs text-zinc-500">Separation score {s.profile.quality.dPrime} · measured on {s.profile.counts.screen + s.profile.counts.down} calibration frames · {new Date(s.profile.createdAt).toLocaleDateString()}. {s.profile.quality.validated ? ' Quality was cross-validated on held-out capture steps.' : ''}</p>}
                 {s.profile.quality.issues?.map((i) => <p key={i.id} className={cx('mt-2 text-xs', i.severity === 'error' ? 'text-red-300' : i.severity === 'warn' ? 'text-amber-300' : 'text-zinc-400')}>• {i.message}</p>)}
               </div>
             )}
@@ -258,7 +269,7 @@ export default function EyeSetup() {
               <fieldset className="grid gap-3 sm:grid-cols-3">
                 <legend className="mb-2 text-sm font-medium text-zinc-300">Preferences</legend>
                 <label className="text-sm text-zinc-400">Sensitivity
-                  <select value={s.settings.sensitivity} onChange={(e) => eye.setSettings({ sensitivity: e.target.value })} className="mt-1 block w-full rounded-lg border border-zinc-800 bg-zinc-950 px-3 py-2 text-zinc-200">
+                  <select value={s.settings.sensitivity} onChange={(e) => eye.setSettings({ sensitivity: e.target.value })} className="mt-1 block w-full rounded-xl border border-white/10 bg-zinc-950/60 px-3 py-2 text-zinc-200">
                     {Object.keys(SENSITIVITY).map((k) => <option key={k} value={k}>{k} ({SENSITIVITY[k].confirmDownMs} ms)</option>)}
                   </select>
                 </label>
@@ -271,7 +282,7 @@ export default function EyeSetup() {
 
         {step === 'position' && (
           <div className="mt-4 grid gap-5 md:grid-cols-2">
-            <div className="relative overflow-hidden rounded-xl border border-zinc-800">
+            <div className="relative overflow-hidden rounded-xl border border-white/[0.08]">
               <Preview className="aspect-[4/3] w-full" />
               <div className="pointer-events-none absolute inset-0 flex items-center justify-center" aria-hidden="true"><div className="h-3/4 w-1/2 rounded-[50%] border-2 border-dashed border-white/40" /></div>
             </div>
@@ -287,7 +298,7 @@ export default function EyeSetup() {
                 {s.issues.map((i) => <p key={i.id} className={cx('rounded-md px-3 py-2 text-sm', i.severity === 'error' ? 'bg-red-950/40 text-red-200' : 'bg-amber-950/30 text-amber-200')}>{i.message}</p>)}
               </div>
               <div className="mt-5 flex gap-2">
-                <Button disabled={!positionReady || blocking.length > 0} onClick={() => { data.current = { screen: [], down: [], brightness: [] }; setStep('screen') }}>Continue</Button>
+                <Button disabled={!positionReady || blocking.length > 0} onClick={() => { data.current = { screenSegments: [], downSegments: [], brightness: [] }; setStep('screen') }}>Continue</Button>
                 <Button variant="ghost" onClick={cancel}>Cancel</Button>
               </div>
               <p className="mt-3 text-xs text-zinc-600">Calibration takes about 30 seconds in three short steps: follow dots, type a sentence, then look down at your keys.</p>
@@ -303,11 +314,11 @@ export default function EyeSetup() {
               {result.quality.dPrime != null && (
                 <dl className="mt-3 grid grid-cols-3 gap-3 text-sm">
                   <div><dt className="text-zinc-500">Separation</dt><dd className="tabular-nums text-white">{result.quality.dPrime}</dd></div>
-                  <div><dt className="text-zinc-500">Screen frames misread</dt><dd className="tabular-nums text-white">{(result.quality.inSampleFalsePositive * 100).toFixed(1)}%</dd></div>
-                  <div><dt className="text-zinc-500">Keyboard frames missed</dt><dd className="tabular-nums text-white">{(result.quality.inSampleFalseNegative * 100).toFixed(1)}%</dd></div>
+                  <div><dt className="text-zinc-500">Screen frames misread</dt><dd className="tabular-nums text-white">{(result.quality.falsePositive * 100).toFixed(1)}%</dd></div>
+                  <div><dt className="text-zinc-500">Keyboard frames missed</dt><dd className="tabular-nums text-white">{(result.quality.falseNegative * 100).toFixed(1)}%</dd></div>
                 </dl>
               )}
-              <p className="mt-3 text-xs text-zinc-500">The percentages come from the calibration frames themselves. They show how separable your two looks are, not how accurate tracking will be during real typing.</p>
+              <p className="mt-3 text-xs text-zinc-500">{result.quality.validated ? 'These rates are cross-validated: each capture step was held out and scored by a model that never saw it.' : 'These rates were measured on the calibration frames themselves.'} They describe this short calibration, so use the live check below to confirm tracking follows you while you really type.</p>
               {result.quality.issues?.map((i) => <p key={i.id} className={cx('mt-2 text-sm', i.severity === 'error' ? 'text-red-300' : i.severity === 'warn' ? 'text-amber-300' : 'text-zinc-400')}>• {i.message}</p>)}
             </div>
             {!result.ok && <Notice tone="warn">Tracking will not be used to score your sessions with this calibration, so you won&apos;t get a misleading visual-discipline number. Adjust the camera or lighting and try again, or continue without eye tracking.</Notice>}

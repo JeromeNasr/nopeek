@@ -1,4 +1,4 @@
-// NoPeek typing engine: a pure, DOM-free state machine.
+// TouchType typing engine: a pure, DOM-free state machine.
 //
 // Behaviour is modelled on the well-known conventions of modern typing tests
 // (timer starts on the first keystroke; space commits a word; you may only

@@ -1,4 +1,4 @@
-# NoPeek v2 – engineering report
+# TouchType v2 – engineering report
 
 ## 1. Audit findings (original app, commit 97c063b)
 * ~1,470 lines: React + Vite + Supabase + WebGazer (loaded from `webgazer.cs.brown.edu` at runtime). **No tests, no schema/migrations in the repo**, no CLAUDE.md.
@@ -18,7 +18,7 @@
 MediaPipe Face Landmarker (iris + head pose) served locally; personal 2-class calibration with measured quality and refusal when unreliable; multi-signal classification with 5 outcomes (screen / keyboard / away / brief glance / uncertain-unavailable); hysteresis, dwell, blink/loss/reacquisition handling, bounded posture drift; explicit measured-vs-unavailable accounting; camera lifecycle (stops on leave, tab hidden, device lost); GPU→CPU fallback.
 
 ## 4. Monkeytype integration & licensing
-Source studied; **no code copied** (GPL-3.0 would force NoPeek to be GPL-3.0; engine is not separable). Clean-room engine reproduces the behaviours/formulas. Details and what to do if you ever copy code: `NOTICE.md`. I am not a lawyer; if you want to ship Monkeytype code, adopt GPL-3.0 deliberately.
+Source studied; **no code copied** (GPL-3.0 would force TouchType to be GPL-3.0; engine is not separable). Clean-room engine reproduces the behaviours/formulas. Details and what to do if you ever copy code: `NOTICE.md`. I am not a lawyer; if you want to ship Monkeytype code, adopt GPL-3.0 deliberately.
 
 ## 5. New typing & training features
 Engine (`src/engine`): time (15/30/60/120) / word (10–100) / custom text; punctuation, numbers, quotes, code; per-char feedback, extra chars, word-delete, step-back only into wrong words, WPM/raw/accuracy/consistency/rhythm, per-second history, deterministic seeded text; input via hidden textarea (IME, virtual keyboards, dead keys), timestamps from `event.timeStamp`; direct-DOM smooth caret + 3-line scroll, memoised words.
@@ -56,3 +56,7 @@ Engine (28), keyboard/curriculum/generators/analysis/recommender/goals/dashboard
 
 ## 12. Needs physical webcam validation
 Peek recall/false-peek rates on real people; calibration quality thresholds (d′ 3/2/1.4); dwell defaults (300/450/750 ms); head-nod vs peek disagreement rule; drift adaptation rate; behaviour with glasses/lighting/different cameras; CPU cost with a face present on low-end laptops; detection of GPU-slow fallback on real machines; Firefox/Safari.
+
+## 13. Second pass (TouchType)
+Renamed to **TouchType** (local data migrates from the old storage prefix). New design system (self-hosted Geist + JetBrains Mono, accent themes, staggered/entrance animations, count-up results, skeleton loading, reduced-motion support), sticky nav with hover prefetch, focus mode, pace ghost, key sounds + metronome (Web Audio, synthesised), smart keyboard hints, caret styles, text size, daily plan, peek-trigger analysis. Tracking v3: see `docs/EYE_TRACKING.md`.
+Tests: 117. Simulation after v3 (25 simulated setups): 21 accepted, 0.026 false peeks/min, 100 % recall of 1-s peeks — still a simulation, not webcam validation. The Supabase project was paused when checked, so the schema and migration remain unverified against production.

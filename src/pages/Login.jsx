@@ -59,7 +59,7 @@ export default function Login() {
   if (user) {
     return (
       <div className="mx-auto flex max-w-md flex-col px-6 py-16">
-        <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-8">
+        <div className="rounded-xl border border-white/[0.08] bg-zinc-900/50 p-8">
           <h1 className="text-2xl font-semibold tracking-tight text-white">You&apos;re signed in</h1>
           <p className="mt-2 text-sm text-zinc-400">{user.email}</p>
           <p className="mt-2 text-sm text-zinc-500">Sessions and your keyboard setup sync to your account. Eye-tracking calibration and the camera stay on this device.</p>
@@ -74,7 +74,7 @@ export default function Login() {
 
   return (
     <div className="mx-auto flex max-w-md flex-col px-6 py-16">
-      <div className="rounded-xl border border-zinc-800 bg-zinc-900/50 p-8 shadow-xl shadow-black/20">
+      <div className="rounded-xl border border-white/[0.08] bg-zinc-900/50 p-8 shadow-xl shadow-black/20">
         <h1 className="text-2xl font-semibold tracking-tight text-white">
           {isSignIn ? 'Welcome back' : 'Create an account'}
         </h1>

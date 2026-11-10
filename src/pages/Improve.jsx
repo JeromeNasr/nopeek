@@ -64,7 +64,7 @@ export default function Improve() {
       <PageHeader title="Improve" subtitle="Personalised recommendations, ranked by how strongly your data supports them, and goals to track real progress." />
 
       <h2 className="mb-3 text-lg font-semibold text-white">Recommended for you</h2>
-      <ol className="space-y-3">
+      <ol className="stagger space-y-3">
         {rec.recs.map((r, i) => {
           const link = actionLink(r.action)
           return (
@@ -97,7 +97,7 @@ export default function Improve() {
 
       <Goals />
 
-      <details className="mt-10 rounded-xl border border-zinc-800 p-4 text-sm text-zinc-400">
+      <details className="mt-10 rounded-xl border border-white/[0.08] p-4 text-sm text-zinc-400">
         <summary className="cursor-pointer font-medium text-zinc-200">How recommendations are made</summary>
         <ul className="mt-3 list-disc space-y-1.5 pl-5">
           <li>A key is flagged only if its error rate – after allowing for small samples – is clearly above <em>your own</em> average, with at least 10 presses.</li>

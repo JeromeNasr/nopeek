@@ -1,4 +1,4 @@
-# NoPeek
+# TouchType
 
 A touch-typing trainer: structured lessons, personalised drills built from your own mistakes and rhythm,
 a Monkeytype-style test, and optional **on-device** eye tracking that measures how often you look at the keyboard.

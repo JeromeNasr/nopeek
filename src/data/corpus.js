@@ -1,4 +1,4 @@
-// Original practice texts (written for NoPeek) for the real-world stage.
+// Original practice texts (written for TouchType) for the real-world stage.
 
 export const prose = [
   'The morning train pulled out of the station just as the rain began to fall. Maya pressed her forehead against the cool window and watched the city blur into long ribbons of grey and gold. She had a notebook open on her lap, but the page stayed empty. Some days the words came easily; today they were hiding.',

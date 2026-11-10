@@ -30,7 +30,7 @@ export default function Learn() {
         )}
       </Card>
 
-      <Link to="/learn/fingers" className="mb-8 flex items-center justify-between rounded-xl border border-zinc-800 bg-zinc-900/40 p-5 transition hover:border-zinc-600">
+      <Link to="/learn/fingers" className="card card-hover mb-8 flex items-center justify-between p-5">
         <div>
           <p className="font-medium text-white">Finger map &amp; hand position</p>
           <p className="mt-1 text-sm text-zinc-400">Which finger owns every key, where to rest your hands, and finger-specific drills.</p>
@@ -49,7 +49,7 @@ export default function Learn() {
                 <span className="text-xs text-zinc-500">{done}/{lessons.length}</span>
               </div>
               <p className="mb-3 text-sm text-zinc-500">{stage.blurb}</p>
-              <ul className="grid gap-2 sm:grid-cols-2">
+              <ul className="stagger grid gap-2 sm:grid-cols-2">
                 {lessons.map((l) => {
                   const p = progress.byLesson[l.id]
                   const isNext = progress.nextLessonId === l.id
@@ -57,8 +57,8 @@ export default function Learn() {
                     <li key={l.id}>
                       <Link
                         to={`/learn/${l.id}`}
-                        className={cx('flex h-full items-start justify-between gap-3 rounded-lg border p-4 transition',
-                          isNext ? 'border-emerald-600/70 bg-emerald-500/5' : 'border-zinc-800 bg-zinc-900/40 hover:border-zinc-600', !p.unlocked && 'opacity-60')}
+                        className={cx('card-hover flex h-full items-start justify-between gap-3 rounded-xl border p-4',
+                          isNext ? 'border-emerald-500/50 bg-emerald-500/[0.06]' : 'border-white/[0.07] bg-white/[0.02]', !p.unlocked && 'opacity-60')}
                       >
                         <div>
                           <p className="text-sm font-medium text-zinc-100"><span className="text-zinc-500">{l.id}</span> {l.title}</p>
@@ -155,6 +155,7 @@ function LessonInner({ id }) {
           makeRun={makeRun}
           lesson={lesson}
           showKeyboard={lesson.showKeyboard}
+          guideMode={lesson.showKeyboard ? (lesson.stage <= 1 ? 'always' : 'smart') : 'off'}
           meta={{ mode: 'lesson', modeKey: `lesson-${lesson.id}`, lessonId: lesson.id, title: `Lesson ${lesson.id}` }}
           Actions={LessonActions}
           actionsProps={{ nextId }}
@@ -204,14 +205,14 @@ export function FingerGuide() {
             <li>Drifting off the home row so keys feel "in the wrong place".</li>
             <li>Typing numbers with one finger instead of moving the whole hand.</li>
           </ul>
-          <p className="mt-3 rounded-md bg-zinc-800/60 p-3 text-xs text-zinc-400">A browser only learns <em>which key</em> was pressed, never <em>which finger</em> pressed it. NoPeek therefore reports errors on "keys assigned to a finger", and rhythm patterns that suggest a placement problem – not a detected finger.</p>
+          <p className="mt-3 rounded-md bg-zinc-800/60 p-3 text-xs text-zinc-400">A browser only learns <em>which key</em> was pressed, never <em>which finger</em> pressed it. TouchType therefore reports errors on "keys assigned to a finger", and rhythm patterns that suggest a placement problem – not a detected finger.</p>
         </Card>
       </div>
       <h2 className="mb-3 mt-8 text-lg font-semibold text-white">Finger drills</h2>
       <ul className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
         {FINGER_ORDER.filter((f) => byFinger[f].length > 1).map((f) => (
           <li key={f}>
-            <Link to={`/practice?kind=finger&codes=${byFinger[f].join(',')}&label=${encodeURIComponent(FINGERS[f].label)}`} className="block rounded-lg border border-zinc-800 p-3 transition hover:border-zinc-600">
+            <Link to={`/practice?kind=finger&codes=${byFinger[f].join(',')}&label=${encodeURIComponent(FINGERS[f].label)}`} className="card card-hover block p-3" style={{ animation: 'none' }}>
               <p className="text-sm font-medium text-white">{FINGERS[f].label}</p>
               <p className="mt-1 text-xs text-zinc-500">{byFinger[f].length} keys</p>
             </Link>

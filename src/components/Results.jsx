@@ -9,9 +9,11 @@ export function Sparkline({ series, raw = null, height = 80, label = 'WPM per se
   if (!series || series.length < 2) return null
   const w = 600
   const all = [...series, ...(raw ?? [])]
-  const max = Math.max(10, ...all)
+  // pad the range so a steady run sits mid-chart instead of on the top edge
+  const hi = Math.max(10, ...all) * 1.12
+  const lo = Math.max(0, Math.min(...all) * 0.7)
   const x = (i) => (i / (series.length - 1)) * w
-  const y = (v) => height - 6 - (v / max) * (height - 12)
+  const y = (v) => height - 6 - ((v - lo) / (hi - lo || 1)) * (height - 12)
   const path = (arr) => arr.map((v, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ')
   return (
     <svg viewBox={`0 0 ${w} ${height}`} className="h-20 w-full" role="img" aria-label={`${label}: from ${series[0]} to ${series[series.length - 1]}, peak ${Math.max(...series)}`} preserveAspectRatio="none">
