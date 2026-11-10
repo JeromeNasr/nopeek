@@ -30,11 +30,12 @@ const Word = memo(function Word({ word, typed, state, index }) {
  * `version` changes whenever the engine mutates; caret/scroll are applied directly to the DOM
  * (no React state) so a keystroke costs one or two word re-renders.
  */
-export default function TypingArea({ engine, version, focused, onFocusRequest, blurLabel = 'Click here or start typing to focus' }) {
+export default function TypingArea({ engine, version, focused, onFocusRequest, ghostWpm = null, ghostLabel = 'your pace', blurLabel = 'Click here or start typing to focus' }) {
   const viewportRef = useRef(null)
   const wordsRef = useRef(null)
   const caretRef = useRef(null)
   const idleTimer = useRef(null)
+  const ghostRef = useRef(null)
   const firstPlace = useRef(true)
 
   const placeCaret = useCallback(() => {
@@ -78,6 +79,43 @@ export default function TypingArea({ engine, version, focused, onFocusRequest, b
     }
   }, [version, placeCaret])
 
+  // Pace ghost: a faint marker moving at a steady target speed (your own average or best).
+  useEffect(() => {
+    const ghost = ghostRef.current
+    if (!ghost || !ghostWpm) return undefined
+    let raf
+    let wi = 0
+    let consumed = 0 // characters before word `wi`
+    const cps = (ghostWpm * 5) / 60
+    const loop = () => {
+      raf = requestAnimationFrame(loop)
+      const words = wordsRef.current
+      if (!words || engine.startedAt == null || engine.finished) {
+        ghost.style.opacity = '0'
+        return
+      }
+      const pos = ((performance.now() - engine.startedAt) / 1000) * cps
+      while (wi < engine.words.length && pos >= consumed + engine.words[wi].length + 1) {
+        consumed += engine.words[wi].length + 1
+        wi++
+      }
+      const el = words.querySelector(`[data-w="${wi}"]`)
+      if (!el) {
+        ghost.style.opacity = '0'
+        return
+      }
+      const within = pos - consumed
+      const idx = Math.min(Math.floor(within), el.children.length - 1)
+      const k = el.children[Math.max(0, idx)]
+      if (!k) return
+      const frac = Math.min(1, within - idx)
+      ghost.style.opacity = ''
+      ghost.style.transform = `translate(${el.offsetLeft + k.offsetLeft + frac * k.offsetWidth}px, ${el.offsetTop + k.offsetTop}px)`
+    }
+    raf = requestAnimationFrame(loop)
+    return () => cancelAnimationFrame(raf)
+  }, [engine, ghostWpm])
+
   useEffect(() => {
     const ro = new ResizeObserver(() => placeCaret())
     if (viewportRef.current) ro.observe(viewportRef.current)
@@ -107,6 +145,7 @@ export default function TypingArea({ engine, version, focused, onFocusRequest, b
       >
         <div ref={wordsRef} className="typing-words">
           {items}
+          {ghostWpm ? <span ref={ghostRef} className="ghost" data-label={ghostLabel} style={{ opacity: 0 }} aria-hidden="true" /> : null}
           <span ref={caretRef} className="caret idle" aria-hidden="true" />
         </div>
       </div>
@@ -114,7 +153,7 @@ export default function TypingArea({ engine, version, focused, onFocusRequest, b
         <button
           type="button"
           onClick={onFocusRequest}
-          className="absolute inset-0 flex items-center justify-center text-sm font-medium text-zinc-200"
+          className="absolute inset-0 flex animate-fade-up items-center justify-center gap-2 text-sm font-medium text-zinc-200"
         >
           {blurLabel}
         </button>

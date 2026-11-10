@@ -11,7 +11,7 @@ import { SessionTally } from './tally.js'
 import { FaceTracker } from './tracker.js'
 
 const SETTINGS_KEY = 'eye.settings'
-const PROFILE_KEY = 'eye.profile.v2' // calibration numbers only; never uploaded
+const PROFILE_KEY = 'eye.profile.v3' // calibration numbers only; never uploaded
 
 const DEFAULT_SETTINGS = { enabled: false, sensitivity: 'balanced', showPreview: true, hints: true }
 
@@ -88,14 +88,27 @@ class EyeSession {
   }
 
   /** Build and store a profile from labelled capture arrays. Returns the (possibly rejected) profile. */
-  finishCalibration({ screen, down, brightness }) {
-    const profile = buildProfile({ screen, down, brightness })
+  finishCalibration(data) {
+    const profile = buildProfile(data)
     this.profile = profile
     if (profile.ok) writeJSON(PROFILE_KEY, profile)
     else removeKey(PROFILE_KEY)
     this._rebuildGaze()
     this._emit()
     return profile
+  }
+
+  /** Capture ~1.5 s of screen-looking and re-centre the baseline (after a posture change). */
+  recenter(ms = 1500) {
+    if (!this.gaze || this.runtime.phase !== 'running') return Promise.resolve(false)
+    this.beginCapture()
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        const { samples } = this.endCapture()
+        resolve(this.gaze ? this.gaze.recenter(samples) : false)
+        this._emit()
+      }, ms)
+    })
   }
 
   clearCalibration() {

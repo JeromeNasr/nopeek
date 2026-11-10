@@ -2,7 +2,8 @@ import { useMemo, useState } from 'react'
 import Keyboard, { FingerLegend } from './Keyboard.jsx'
 import { Badge, Button, Card, Notice } from './ui.jsx'
 import { cx } from '../lib/cx.js'
-import { mergeLayoutObservations, readLayoutObservations } from '../data/repo.js'
+import { removeKey } from '../data/localStore.js'
+import { readLayoutObservations } from '../data/repo.js'
 import { useTraining } from '../data/trainingContext.js'
 import { FINGERS, FINGER_ORDER, FORM_FACTORS, LAYOUTS, LAYOUT_IDS, charToKey, codeLabel, fingerOfCode, layoutFromLayoutMap, normalizeProfile, scoreLayouts, suggestLayout } from '../training/keyboard.js'
 
@@ -130,7 +131,7 @@ export default function KeyboardSetup() {
         {profile.setupComplete && !dirty && <Badge tone="good">Saved</Badge>}
         {saveMsg && <span className="text-sm text-zinc-400">{saveMsg}</span>}
         {obs.pairs && Object.keys(obs.pairs).length > 0 && (
-          <button type="button" className="text-xs text-zinc-600 underline" onClick={() => { mergeLayoutObservations({}, false); localStorage.removeItem('nopeek.layoutObs.v1'); setObs({ pairs: {}, isoSeen: false }) }}>Clear typing-based layout hints</button>
+          <button type="button" className="text-xs text-zinc-600 underline" onClick={() => { removeKey('layoutObs.v1'); setObs({ pairs: {}, isoSeen: false }) }}>Clear typing-based layout hints</button>
         )}
       </div>
     </Card>

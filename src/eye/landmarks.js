@@ -61,7 +61,20 @@ function eyeFeatures(lm, W, H, left, right, upper, lower, iris) {
  * @param {number} W video width (px)
  * @param {number} H video height (px)
  */
-export function extractFeatures(lm, matrix, W, H) {
+/** Pick the eye-related blendshape scores we use (MediaPipe ARKit-style names). */
+export function readBlendshapes(categories) {
+  if (!categories?.length) return null
+  const get = {}
+  for (const c of categories) get[c.categoryName] = c.score
+  const pair = (a, b) => (get[a] == null || get[b] == null ? null : (get[a] + get[b]) / 2)
+  return {
+    lookDown: pair('eyeLookDownLeft', 'eyeLookDownRight'),
+    lookUp: pair('eyeLookUpLeft', 'eyeLookUpRight'),
+    blink: pair('eyeBlinkLeft', 'eyeBlinkRight'),
+  }
+}
+
+export function extractFeatures(lm, matrix, W, H, blendshapes = null) {
   if (!lm || lm.length < LANDMARK_COUNT) return null
   const r = eyeFeatures(lm, W, H, LM.rOuter, LM.rInner, LM.rUpper, LM.rLower, LM.rIris)
   const l = eyeFeatures(lm, W, H, LM.lInner, LM.lOuter, LM.lUpper, LM.lLower, LM.lIris)
@@ -78,7 +91,11 @@ export function extractFeatures(lm, matrix, W, H) {
     Math.min(...xs), 1 - Math.max(...xs), top, 1 - bottom,
   )
 
+  const bs = readBlendshapes(blendshapes)
   return {
+    // learned eye-look signal: "down" minus "up" so it is signed around neutral
+    lookDown: bs && bs.lookDown != null ? bs.lookDown - (bs.lookUp ?? 0) : null,
+    blink: bs ? bs.blink : null,
     pitch: pose ? pose.pitch : null,
     yaw: pose ? pose.yaw : null,
     roll: pose ? pose.roll : null,

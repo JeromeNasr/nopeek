@@ -3,7 +3,7 @@
 // it is based on, and categories with too little data say so instead.
 
 import { mean } from '../engine/stats.js'
-import { aggregateAnalyses, detectWeaknesses, weaknessTrend } from './analysis.js'
+import { aggregateAnalyses, detectWeaknesses, peekTriggers, weaknessTrend } from './analysis.js'
 import { FINGERS, codeLabel, codeToChar, profileFingerOfCode } from './keyboard.js'
 import { LESSON_BY_ID, computeProgress } from './lessons.js'
 
@@ -170,6 +170,18 @@ export function buildRecommendations({ sessions, profile, attempts = [] }) {
     })
   }
 
+  // 9b. Peek triggers: the keys you look down for
+  const triggers = peekTriggers(agg).slice(0, 4)
+  if (triggers.length) {
+    recs.push({
+      id: 'peek-keys', priority: 86, kind: 'keys',
+      title: `Keys you look down for: ${triggers.map((k) => label(k.code)).join(', ')}`,
+      reason: 'Your eyes drop to the keyboard far more often around these keys than their frequency explains. Drilling them by feel is the quickest way to stop peeking.',
+      evidence: triggers.map((k) => `${label(k.code)}: ${k.looks} looks over ${k.presses} presses (${k.lift.toFixed(1)}× more than expected)`),
+      action: { type: 'practice', label: 'No-look key drill', spec: { kind: 'keys', chars: triggers.map((k) => charOf(k.code)).filter(Boolean), label: 'Keys you look for' } },
+    })
+  }
+
   // 10. Speed (only when accuracy is solid)
   if (Number.isFinite(acc) && acc >= 96 && (!Number.isFinite(cons) || cons >= 55)) {
     recs.push({
@@ -192,5 +204,5 @@ export function buildRecommendations({ sessions, profile, attempts = [] }) {
   }
 
   recs.sort((a, b) => b.priority - a.priority)
-  return { recs, weak, progress, agg }
+  return { recs, weak, progress, agg, triggers }
 }

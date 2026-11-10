@@ -12,7 +12,7 @@ function Privacy() {
   const wipe = (keys, label) => {
     if (!window.confirm(`Delete ${label} from this device? This cannot be undone.`)) return
     keys.forEach(removeKey)
-    if (keys.includes('eye.profile.v2')) eye.clearCalibration()
+    if (keys.includes('eye.profile.v3')) eye.clearCalibration()
     refresh()
     setMsg(`${label} deleted from this device.`)
   }
@@ -26,7 +26,7 @@ function Privacy() {
         <li>The camera light is on only while a typing page or this setup page is open and tracking is enabled; it turns off when you leave.</li>
       </ul>
       <div className="mt-4 flex flex-wrap gap-2">
-        <Button variant="danger" size="sm" onClick={() => wipe(['eye.profile.v2'], 'eye calibration')}>Delete calibration</Button>
+        <Button variant="danger" size="sm" onClick={() => wipe(['eye.profile.v3'], 'eye calibration')}>Delete calibration</Button>
         <Button variant="danger" size="sm" onClick={() => wipe(['sessions.v1'], 'locally saved sessions')}>Delete local sessions</Button>
         <Button variant="danger" size="sm" onClick={() => wipe(['keyboard.v1', 'goals.v1', 'layoutObs.v1', 'test.settings'], 'keyboard setup, goals and preferences')}>Reset keyboard &amp; preferences</Button>
       </div>

@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { Badge, Button, Card, Notice, Stat } from './ui.jsx'
+import { Badge, Button, Card, CountUp, Notice, Stat } from './ui.jsx'
 import { cx } from '../lib/cx.js'
 import { codeLabel } from '../training/keyboard.js'
 import { TRACKING_STATUS } from '../eye/tally.js'
@@ -16,7 +16,7 @@ export function Sparkline({ series, raw = null, height = 80, label = 'WPM per se
   return (
     <svg viewBox={`0 0 ${w} ${height}`} className="h-20 w-full" role="img" aria-label={`${label}: from ${series[0]} to ${series[series.length - 1]}, peak ${Math.max(...series)}`} preserveAspectRatio="none">
       {raw && <path d={path(raw)} fill="none" stroke="#52525b" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />}
-      <path d={path(series)} fill="none" stroke="#34d399" strokeWidth="2.5" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
+      <path className="draw-line" pathLength="1" style={{ '--len': 1 }} d={path(series)} fill="none" stroke="var(--accent)" strokeWidth="2.5" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
     </svg>
   )
 }
@@ -76,22 +76,33 @@ export function EyeSummary({ tracking, history = [] }) {
   )
 }
 
-export default function Results({ result, lessonCheck, mistakeCodes, layout, history, saveStatus, actions, title = 'Results' }) {
+export default function Results({ result, lessonCheck, mistakeCodes, peekCodes, layout, history, saveStatus, actions, title = 'Results' }) {
   const r = result
   const tone = (v, good, ok) => (v == null ? undefined : v >= good ? 'good' : v >= ok ? 'warn' : 'bad')
+  const prev = history.filter((s) => s.wpm > 0)
+  const best = prev.length ? Math.max(...prev.map((s) => s.wpm)) : null
+  const isBest = best != null && prev.length >= 3 && r.wpm > best && (r.accuracy ?? 0) >= 90
   return (
     <div className="mx-auto max-w-3xl space-y-5" aria-live="polite">
-      <div className="text-center">
-        <p className="text-xs font-medium uppercase tracking-wider text-emerald-400">{title}</p>
+      <div className="animate-scale-in text-center">
+        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-400">{title}</p>
+        <p className="mt-2 text-7xl font-semibold tabular-nums tracking-tight sm:text-8xl">
+          <span className="gradient-text"><CountUp value={Math.round(r.wpm)} duration={900} /></span>
+          <span className="ml-2 text-2xl font-medium text-zinc-500">WPM</span>
+        </p>
+        {isBest && <p className="mt-2"><Badge tone="good">New personal best · previous {Math.round(best)}</Badge></p>}
       </div>
 
       {lessonCheck && (
-        <Card className={lessonCheck.passed ? 'border-emerald-700/60' : 'border-amber-800/60'}>
+        <Card className={lessonCheck.passed ? '!border-emerald-500/40' : '!border-amber-500/30'}>
           <h2 className="text-lg font-semibold text-white">{lessonCheck.passed ? 'Lesson passed' : 'Not quite yet – here is what to improve'}</h2>
-          <ul className="mt-3 space-y-1.5 text-sm">
+          <ul className="stagger mt-3 space-y-1.5 text-sm">
             {lessonCheck.checks.map((c) => (
               <li key={c.id} className="flex items-center justify-between gap-3">
-                <span className="text-zinc-300">{c.ok ? '✓' : '✗'} {c.label}</span>
+                <span className="flex items-center gap-2 text-zinc-300">
+                  <span className={cx('flex h-5 w-5 items-center justify-center rounded-full text-xs', c.ok ? 'bg-emerald-500/20 text-emerald-300' : 'bg-amber-500/20 text-amber-300')}>{c.ok ? '✓' : '!'}</span>
+                  {c.label}
+                </span>
                 <span className={cx('tabular-nums', c.ok ? 'text-emerald-300' : 'text-amber-300')}>
                   {c.actual == null ? '—' : typeof c.actual === 'number' ? Math.round(c.actual * 10) / 10 : c.actual}{c.unit} <span className="text-zinc-500">/ target {c.target}{c.unit}</span>
                 </span>
@@ -102,13 +113,13 @@ export default function Results({ result, lessonCheck, mistakeCodes, layout, his
       )}
 
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Stat label="WPM" value={Math.round(r.wpm)} tone={undefined} hint={`raw ${Math.round(r.rawWpm)}`} />
-        <Stat label="Accuracy" value={r.accuracy == null ? null : Math.round(r.accuracy * 10) / 10} unit="%" tone={tone(r.accuracy, 97, 92)} />
-        <Stat label="Consistency" value={r.consistency == null ? null : Math.round(r.consistency)} unit="/100" hint="even pace per second" />
-        <Stat label="Rhythm" value={r.keyConsistency == null ? null : Math.round(r.keyConsistency)} unit="/100" hint="even key intervals" />
+        <Stat i={1} label="Raw speed" value={Math.round(r.rawWpm)} unit=" WPM" hint="every key, errors included" />
+        <Stat i={2} label="Accuracy" value={r.accuracy == null ? null : Math.round(r.accuracy * 10) / 10} unit="%" tone={tone(r.accuracy, 97, 92)} />
+        <Stat i={3} label="Consistency" value={r.consistency == null ? null : Math.round(r.consistency)} unit="/100" hint="even pace per second" />
+        <Stat i={4} label="Rhythm" value={r.keyConsistency == null ? null : Math.round(r.keyConsistency)} unit="/100" hint="even key intervals" />
       </div>
 
-      <Card>
+      <Card i={5}>
         <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-zinc-400">
           <span>Speed over time</span>
           <span><span className="text-emerald-400">━</span> WPM <span className="ml-2 text-zinc-500">━</span> raw</span>
@@ -123,20 +134,31 @@ export default function Results({ result, lessonCheck, mistakeCodes, layout, his
         </dl>
       </Card>
 
-      {mistakeCodes?.length > 0 && (
-        <Card>
-          <h3 className="font-medium text-white">Keys that tripped you up this run</h3>
-          <p className="mt-2 flex flex-wrap gap-2">
-            {mistakeCodes.map((m) => (
-              <Badge key={m.code} tone="warn">{codeLabel(layout, m.code)} · {m.err}/{m.n}</Badge>
-            ))}
-          </p>
-        </Card>
+      {(mistakeCodes?.length > 0 || peekCodes?.length > 0) && (
+        <div className="grid gap-3 sm:grid-cols-2">
+          {mistakeCodes?.length > 0 && (
+            <Card i={6}>
+              <h3 className="font-medium text-white">Keys that tripped you up</h3>
+              <p className="mt-3 flex flex-wrap gap-2">
+                {mistakeCodes.map((m) => <Badge key={m.code} tone="warn">{codeLabel(layout, m.code)} · {m.err}/{m.n}</Badge>)}
+              </p>
+            </Card>
+          )}
+          {peekCodes?.length > 0 && (
+            <Card i={7}>
+              <h3 className="font-medium text-white">Keys you looked down for</h3>
+              <p className="mt-1 text-xs text-zinc-500">What you were typing each time your eyes dropped to the keyboard.</p>
+              <p className="mt-3 flex flex-wrap gap-2">
+                {peekCodes.map((m) => <Badge key={m.code} tone="info">{codeLabel(layout, m.code)} · {m.n}×</Badge>)}
+              </p>
+            </Card>
+          )}
+        </div>
       )}
 
       <EyeSummary tracking={r.tracking} history={history} />
 
-      {saveStatus && <p className="text-center text-sm text-zinc-400">{saveStatus}</p>}
+      {saveStatus && <p className="text-center text-sm text-zinc-500">{saveStatus}</p>}
       <div className="flex flex-wrap justify-center gap-3">{actions}</div>
     </div>
   )

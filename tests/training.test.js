@@ -386,3 +386,57 @@ describe('dashboard summary and narrative', () => {
     expect([...n.good, ...n.bad, ...n.improved].some((i) => /discipline|keyboard/i.test(i.text))).toBe(false)
   })
 })
+
+import { attributePeeks, peekTriggers } from '../src/training/analysis.js'
+
+describe('peek triggers (eye tracking fused with keystrokes)', () => {
+  const profile = normalizeProfile({})
+  const key = (t, exp) => ({ t, type: 'c', exp, ch: exp, ok: true })
+  it('attributes a look to the keys typed during and just after it', () => {
+    const log = [key(0, 'a'), key(200, 's'), key(1500, 'b'), key(1800, 'e'), key(5000, 't')]
+    const r = attributePeeks(log, [{ startMs: 900, durationMs: 700 }], profile)
+    expect(r.keys).toEqual({ KeyB: 1, KeyE: 1 })
+    expect(r.peeks).toBe(1)
+    expect(attributePeeks(log, [], profile).total).toBe(0)
+  })
+  it('flags keys looked at out of proportion to their frequency, and needs enough evidence', () => {
+    const keys = { KeyE: { n: 300, err: 0, ms: 0, k: 0 }, KeyB: { n: 20, err: 0, ms: 0, k: 0 }, KeyT: { n: 200, err: 0, ms: 0, k: 0 } }
+    const t = peekTriggers({ keys, peekKeys: { KeyB: 6, KeyE: 4, KeyT: 2 } })
+    expect(t[0].code).toBe('KeyB')
+    expect(t.some((x) => x.code === 'KeyE')).toBe(false) // common key, proportionate looks
+    expect(peekTriggers({ keys, peekKeys: { KeyB: 2 } })).toEqual([])
+  })
+  it('produces a recommendation with evidence', () => {
+    const analysis = { v: 1, keys: { KeyE: { n: 300, err: 0, ms: 0, k: 0 }, KeyB: { n: 20, err: 0, ms: 0, k: 0 } }, confusions: {}, bigrams: {}, chars: {}, shift: { n: 0, err: 0 }, extra: 0, peek: { keys: { KeyB: 7, KeyE: 3 } } }
+    const sessions = [1, 2, 3].map((i) => ({ wpm: 40, accuracy: 96, consistency: 70, keystrokes: 320, backspaces: 3, analysis, created_at: String(i) }))
+    const { recs } = buildRecommendations({ sessions, profile })
+    const r = recs.find((x) => x.id === 'peek-keys')
+    expect(r.title).toMatch(/B/)
+    expect(r.action.spec.chars).toEqual(['b'])
+  })
+})
+
+import { buildDailyPlan } from '../src/training/dailyPlan.js'
+
+describe('daily plan', () => {
+  const now = new Date(2026, 10, 8, 18)
+  const at = (h, o = {}) => ({ created_at: new Date(2026, 10, 8, h).toISOString(), wpm: 40, accuracy: 96, mode: 'practice-accuracy', practice_kind: 'accuracy', ...o })
+  const progress = { nextLessonId: '2.1' }
+  it('starts unticked and points newcomers at the next lesson', () => {
+    const p = buildDailyPlan({ sessions: [], rec: { recs: [] }, progress, now })
+    expect(p.doneCount).toBe(0)
+    expect(p.steps[1].action).toEqual({ type: 'lesson', lessonId: '2.1' })
+  })
+  it('ticks steps from sessions recorded today only', () => {
+    const yesterday = { ...at(10), created_at: new Date(2026, 10, 7, 10).toISOString() }
+    expect(buildDailyPlan({ sessions: [yesterday], rec: { recs: [] }, progress, now }).doneCount).toBe(0)
+    const p = buildDailyPlan({ sessions: [at(9), at(10, { lesson_id: '2.1', practice_kind: null, mode: 'lesson-2.1' }), at(11, { mode: 'time-30', practice_kind: null })], rec: { recs: [] }, progress, now })
+    expect(p.steps.map((s) => s.done)).toEqual([true, true, true])
+  })
+  it('uses the top personalised drill once there is history', () => {
+    const drill = { title: 'Drill your problem keys: E', reason: 'x', action: { type: 'practice', spec: { kind: 'keys', chars: ['e'] } } }
+    const hist = [1, 2, 3].map((d) => ({ ...at(9), created_at: new Date(2026, 10, 8 - d, 9).toISOString() }))
+    const p = buildDailyPlan({ sessions: hist, rec: { recs: [drill] }, progress, now })
+    expect(p.steps[1].title).toMatch(/problem keys/)
+  })
+})

@@ -1,18 +1,25 @@
 // Personal calibration: learns what "looking at my screen" and "looking down at
 // my keyboard" look like for THIS user, camera and posture, and measures how well
-// separated the two are. Quality is computed from the data, not assumed:
-// if the two clusters overlap, the calibration is reported as insufficient.
+// separated the two are.
+//
+// v3: the discriminant is a regularised Fisher LDA over the available signals
+// (head pitch, iris offset, iris-between-lids, learned eye-look-down blendshape),
+// so correlated signals are not double counted. Quality is CROSS-VALIDATED:
+// each capture segment is held out in turn, the model is refit on the rest and
+// scored on the unseen segment. If the two looks overlap, the calibration is
+// reported as insufficient and never used for scoring.
 
 import { median } from '../engine/stats.js'
 
-export const DISCRIMINATIVE = ['pitch', 'gazeV', 'gazeLid']
-export const CONTEXT = ['yaw', 'gazeH', 'roll', 'openness', 'faceWidth']
-const SD_FLOOR = { pitch: 0.7, gazeV: 0.003, gazeLid: 0.015, yaw: 1.0, gazeH: 0.004, roll: 0.8, openness: 0.01, faceWidth: 0.003 }
+export const DISCRIMINATIVE = ['pitch', 'gazeV', 'gazeLid', 'lookDown']
+export const CONTEXT = ['yaw', 'gazeH', 'roll', 'openness', 'faceWidth', 'blink']
+const SD_FLOOR = { pitch: 0.7, gazeV: 0.003, gazeLid: 0.015, lookDown: 0.02, yaw: 1.0, gazeH: 0.004, roll: 0.8, openness: 0.01, faceWidth: 0.003, blink: 0.02 }
 const MIN_SNR = 1.2
-const MAX_WEIGHT = 25
+const SHRINKAGE = 0.2
 export const MIN_SAMPLES = 40
-
-export const PROFILE_VERSION = 2
+export const PROFILE_VERSION = 3
+export const T_ENTER = 0.7
+export const T_EXIT = 0.45
 
 /** Median and robust SD (1.4826·MAD), after trimming gross outliers. */
 export function robustStats(values, floor = 0) {
@@ -58,6 +65,55 @@ function classStats(samples) {
   return out
 }
 
+/** Solve A·x = b for a small symmetric positive-definite matrix (Gauss–Jordan with pivoting). */
+export function solve(A, b) {
+  const n = b.length
+  const M = A.map((row, i) => [...row, b[i]])
+  for (let c = 0; c < n; c++) {
+    let p = c
+    for (let r = c + 1; r < n; r++) if (Math.abs(M[r][c]) > Math.abs(M[p][c])) p = r
+    if (Math.abs(M[p][c]) < 1e-12) return null
+    ;[M[c], M[p]] = [M[p], M[c]]
+    for (let r = 0; r < n; r++) {
+      if (r === c) continue
+      const f = M[r][c] / M[c][c]
+      for (let k = c; k <= n; k++) M[r][k] -= f * M[c][k]
+    }
+  }
+  return M.map((row, i) => row[n] / row[i])
+}
+
+/** Regularised LDA weights in standardised feature space. */
+function ldaWeights(axes, s, d, sStats, dStats) {
+  const n = axes.length
+  const resid = []
+  const push = (samples, stats) => {
+    for (const f of samples) {
+      const row = []
+      for (const a of axes) {
+        const x = f[a.feature]
+        if (!Number.isFinite(x)) { row.length = 0; break }
+        // winsorise so a few wild frames cannot dominate the covariance
+        row.push(Math.max(-4, Math.min(4, (x - stats[a.feature].median) / a.scale)))
+      }
+      if (row.length === n) resid.push(row)
+    }
+  }
+  push(s, sStats)
+  push(d, dStats)
+  const C = Array.from({ length: n }, () => new Array(n).fill(0))
+  for (const r of resid) for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) C[i][j] += r[i] * r[j]
+  const m = Math.max(1, resid.length)
+  for (let i = 0; i < n; i++) for (let j = 0; j < n; j++) C[i][j] = (C[i][j] / m) * (1 - SHRINKAGE) + (i === j ? SHRINKAGE : 0)
+  const delta = axes.map((a) => a.sep / a.scale)
+  let w = solve(C, delta) ?? delta
+  // A weight that votes against its own signal's direction is a suppressor effect;
+  // it is fragile when a signal drops out, so those are removed.
+  w = w.map((wi, i) => (wi * delta[i] > 0 ? wi : 0))
+  if (w.every((x) => x === 0)) w = delta
+  return w
+}
+
 /** Project a feature vector onto the screen→keyboard axis: 0 = screen, 1 = keyboard. */
 export function projectScore(profile, f, offset = null) {
   let num = 0
@@ -67,19 +123,48 @@ export function projectScore(profile, f, offset = null) {
     const x = f[a.feature]
     if (x == null || !Number.isFinite(x)) continue
     const base = profile.screen[a.feature].median + (offset?.[a.feature] ?? 0)
-    const zi = (x - base) / a.sep
-    z[a.feature] = zi
-    num += a.weight * zi
-    den += a.weight
+    z[a.feature] = (x - base) / a.sep
+    num += (a.w * (x - base)) / a.scale
+    den += (a.w * a.sep) / a.scale
   }
-  return { t: den > 0 ? num / den : null, z }
+  return { t: den > 1e-9 ? num / den : null, z }
+}
+
+function fit(s, d) {
+  const screenStats = classStats(s)
+  const downStats = classStats(d)
+  const axes = []
+  for (const feature of DISCRIMINATIVE) {
+    const a = screenStats[feature]
+    const b = downStats[feature]
+    if (!a || !b) continue
+    const sep = b.median - a.median
+    const scale = Math.sqrt((a.sd ** 2 + b.sd ** 2) / 2)
+    const snr = Math.abs(sep) / scale
+    if (snr >= MIN_SNR) axes.push({ feature, sep, snr, scale })
+  }
+  if (axes.length) {
+    const w = ldaWeights(axes, s, d, screenStats, downStats)
+    axes.forEach((a, i) => (a.w = w[i]))
+  }
+  return { screen: screenStats, down: downStats, axes }
+}
+
+function rates(model, s, d) {
+  const ts = s.map((f) => projectScore(model, f).t).filter((x) => x != null)
+  const td = d.map((f) => projectScore(model, f).t).filter((x) => x != null)
+  return { ts, td, fp: ts.filter((x) => x > T_ENTER).length, fn: td.filter((x) => x < T_EXIT).length }
 }
 
 /**
  * Build a calibration profile.
- * @param {{screen: object[], down: object[], brightness?: number|null}} data feature samples for each phase
+ * @param {object} data
+ * @param {object[]} data.screen  feature samples while looking at the screen
+ * @param {object[]} data.down    feature samples while looking at the keyboard
+ * @param {object[][]} [data.screenSegments]  the same screen samples split by capture step (enables cross-validation)
+ * @param {object[][]} [data.downSegments]
  */
-export function buildProfile({ screen, down, brightness = null }) {
+export function buildProfile({ screen, down, brightness = null, screenSegments = null, downSegments = null }) {
   const s = cleanSamples(screen)
   const d = cleanSamples(down)
   const base = {
@@ -94,70 +179,94 @@ export function buildProfile({ screen, down, brightness = null }) {
       ok: false,
       quality: {
         level: 'insufficient',
-        score: 0,
         issues: [{ id: 'few-samples', severity: 'error', message: 'Not enough clear frames were captured. Keep your face in view and your eyes open during each step.' }],
       },
     }
   }
 
-  const screenStats = classStats(s)
-  const downStats = classStats(d)
-
-  const axes = []
-  for (const feature of DISCRIMINATIVE) {
-    const a = screenStats[feature]
-    const b = downStats[feature]
-    if (!a || !b) continue
-    const sep = b.median - a.median
-    const pooled = Math.sqrt((a.sd ** 2 + b.sd ** 2) / 2)
-    const snr = Math.abs(sep) / pooled
-    if (snr >= MIN_SNR) axes.push({ feature, sep, snr, weight: Math.min(MAX_WEIGHT, snr * snr) })
-  }
-
-  const profile = { ...base, screen: screenStats, down: downStats, axes }
-  if (axes.length === 0) {
+  const model = fit(s, d)
+  const profile = { ...base, ...model }
+  if (model.axes.length === 0) {
     return {
       ...profile,
       ok: false,
       quality: {
         level: 'insufficient',
-        score: 0,
         issues: [
           {
             id: 'no-separation',
             severity: 'error',
             message:
-              'Looking at the screen and looking at the keyboard produced almost the same measurements. Raise the camera to the top of the screen, sit so your face fills about a third of the frame, and look clearly down at the keys during step 2.',
+              'Looking at the screen and looking at the keyboard produced almost the same measurements. Raise the camera to the top of the screen, sit so your face fills about a third of the frame, and look clearly down at the keys during the keyboard step.',
           },
-          ...preflightFromStats(screenStats, brightness),
+          ...preflightFromStats(model.screen, brightness),
         ],
       },
     }
   }
 
-  // Empirical separation of the projected scores (accounts for correlated features)
-  const ts = s.map((f) => projectScore(profile, f).t).filter((x) => x != null)
-  const td = d.map((f) => projectScore(profile, f).t).filter((x) => x != null)
+  // In-sample separation of the projected scores
+  const ins = rates(profile, s, d)
   const mean = (a) => a.reduce((x, y) => x + y, 0) / a.length
   const sd = (a) => {
     const m = mean(a)
     return Math.sqrt(a.reduce((x, y) => x + (y - m) ** 2, 0) / a.length)
   }
-  const pooledT = Math.sqrt((sd(ts) ** 2 + sd(td) ** 2) / 2) || 1e-6
-  const dPrime = (mean(td) - mean(ts)) / pooledT
-  const falsePositive = ts.filter((x) => x > 0.7).length / ts.length // screen frames that look "keyboard"
-  const falseNegative = td.filter((x) => x < 0.45).length / td.length // keyboard frames that look "screen"
+  const pooledT = Math.sqrt((sd(ins.ts) ** 2 + sd(ins.td) ** 2) / 2) || 1e-6
+  const dPrime = (mean(ins.td) - mean(ins.ts)) / pooledT
+  let falsePositive = ins.fp / ins.ts.length
+  let falseNegative = ins.fn / ins.td.length
+
+  // Leave-one-segment-out cross-validation: an honest, out-of-sample estimate
+  let validated = false
+  let cvFalsePositive = null
+  let cvFalseNegative = null
+  const sSeg = (screenSegments ?? []).map(cleanSamples).filter((x) => x.length >= 8)
+  const dSeg = (downSegments ?? []).map(cleanSamples).filter((x) => x.length >= 8)
+  if (sSeg.length >= 2 && dSeg.length >= 2) {
+    let fp = 0
+    let nS = 0
+    let fn = 0
+    let nD = 0
+    for (let i = 0; i < sSeg.length; i++) {
+      const train = sSeg.filter((_, j) => j !== i).flat()
+      if (train.length < MIN_SAMPLES / 2) continue
+      const m = fit(train, d)
+      if (!m.axes.length) { fp += sSeg[i].length; nS += sSeg[i].length; continue }
+      const r = rates(m, sSeg[i], [])
+      fp += r.fp
+      nS += r.ts.length
+    }
+    for (let i = 0; i < dSeg.length; i++) {
+      const train = dSeg.filter((_, j) => j !== i).flat()
+      if (train.length < MIN_SAMPLES / 2) continue
+      const m = fit(s, train)
+      if (!m.axes.length) { fn += dSeg[i].length; nD += dSeg[i].length; continue }
+      const r = rates(m, [], dSeg[i])
+      fn += r.fn
+      nD += r.td.length
+    }
+    if (nS > 0 && nD > 0) {
+      validated = true
+      cvFalsePositive = fp / nS
+      cvFalseNegative = fn / nD
+      falsePositive = Math.max(falsePositive, cvFalsePositive)
+      falseNegative = Math.max(falseNegative, cvFalseNegative)
+    }
+  }
 
   let level = 'insufficient'
-  if (dPrime >= 3 && falsePositive <= 0.02 && falseNegative <= 0.05) level = 'good'
-  else if (dPrime >= 2 && falsePositive <= 0.06 && falseNegative <= 0.12) level = 'fair'
-  else if (dPrime >= 1.4 && falsePositive <= 0.12 && falseNegative <= 0.25) level = 'poor'
+  if (dPrime >= 3 && falsePositive <= 0.02 && falseNegative <= 0.06) level = 'good'
+  else if (dPrime >= 2 && falsePositive <= 0.06 && falseNegative <= 0.15) level = 'fair'
+  else if (dPrime >= 1.4 && falsePositive <= 0.12 && falseNegative <= 0.3) level = 'poor'
 
-  const qIssues = preflightFromStats(screenStats, brightness)
-  if (axes.length === 1) qIssues.push({ id: 'single-signal', severity: 'info', message: `Only ${axes[0].feature === 'pitch' ? 'head pitch' : 'eye direction'} separates screen from keyboard for you, so tracking relies on a single signal and is less robust to natural head movement.` })
+  const qIssues = preflightFromStats(model.screen, brightness)
+  const label = { pitch: 'head pitch', gazeV: 'iris position', gazeLid: 'iris position', lookDown: 'eye direction' }
+  if (model.axes.length === 1) qIssues.push({ id: 'single-signal', severity: 'info', message: `Only ${label[model.axes[0].feature]} separates screen from keyboard for you, so tracking relies on a single signal and is less robust to natural head movement.` })
   if (level === 'poor') qIssues.push({ id: 'overlap', severity: 'warn', message: 'Screen and keyboard readings overlap noticeably. Expect missed or false detections; try raising the camera or improving lighting, then recalibrate.' })
   if (level === 'insufficient') qIssues.push({ id: 'overlap', severity: 'error', message: 'Screen and keyboard readings overlap too much to classify reliably. Tracking will not be used for scoring.' })
 
+  const r3 = (v) => (v == null ? null : Math.round(v * 1000) / 1000)
   return {
     ...profile,
     // 'poor' is reported honestly but is not used to score sessions
@@ -165,10 +274,13 @@ export function buildProfile({ screen, down, brightness = null }) {
     quality: {
       level,
       dPrime: Math.round(dPrime * 100) / 100,
-      // in-sample rates on the calibration frames themselves; NOT real-world accuracy
-      inSampleFalsePositive: Math.round(falsePositive * 1000) / 1000,
-      inSampleFalseNegative: Math.round(falseNegative * 1000) / 1000,
-      signals: axes.map((a) => a.feature),
+      validated,
+      // held-out estimates when validated; otherwise measured on the calibration frames themselves
+      falsePositive: r3(falsePositive),
+      falseNegative: r3(falseNegative),
+      cvFalsePositive: r3(cvFalsePositive),
+      cvFalseNegative: r3(cvFalseNegative),
+      signals: model.axes.map((a) => a.feature),
       issues: qIssues,
     },
   }
@@ -187,7 +299,7 @@ export function describeLevel(level) {
   return {
     good: 'Good – screen and keyboard are clearly distinguishable.',
     fair: 'Fair – usable, with occasional uncertain frames.',
-    poor: 'Poor – tracking will often be uncertain. Improve camera position or lighting and recalibrate.',
+    poor: 'Poor – tracking would often be wrong, so it is not used for scoring. Improve camera position or lighting and recalibrate.',
     insufficient: 'Insufficient – tracking cannot reliably tell screen from keyboard on this setup.',
   }[level]
 }

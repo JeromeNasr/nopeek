@@ -126,6 +126,55 @@ export function rhythmStats(intervals, log = [], pauses = 0) {
   }
 }
 
+// ---- peek triggers: fusing eye tracking with keystrokes -------------------------
+
+/**
+ * Which keys was the user typing when they looked down at the keyboard?
+ * `peeks` are [{startMs, durationMs}] on the same clock as the keystroke log
+ * (both start at the first keystroke). A key counts as a trigger if it was the
+ * expected key during the look, or within 350 ms after the eyes came back up
+ * (the key that was being searched for is usually pressed right then).
+ */
+export function attributePeeks(log, peeks, profile = DEFAULT_KEYBOARD_PROFILE) {
+  const keys = {}
+  let total = 0
+  if (!peeks?.length) return { v: 1, keys, total, peeks: 0 }
+  const presses = log.filter((e) => e.type === 'c' && e.exp != null)
+  for (const p of peeks) {
+    const from = p.startMs - 100
+    const to = p.startMs + p.durationMs + 350
+    const seen = new Set()
+    for (const e of presses) {
+      if (e.t < from) continue
+      if (e.t > to) break
+      const k = charToKey(profile.layout, e.exp)
+      if (!k || seen.has(k.code)) continue
+      seen.add(k.code)
+      keys[k.code] = (keys[k.code] ?? 0) + 1
+      total++
+    }
+  }
+  return { v: 1, keys, total, peeks: peeks.length }
+}
+
+/**
+ * Keys that attract looks out of proportion to how often they are typed.
+ * @returns {Array<{code, looks, presses, lift}>}
+ */
+export function peekTriggers(agg, minLooks = 3) {
+  const totalLooks = Object.values(agg.peekKeys ?? {}).reduce((a, b) => a + b, 0)
+  const totalPresses = Object.values(agg.keys ?? {}).reduce((a, s) => a + s.n, 0)
+  if (totalLooks < 6 || totalPresses < 100) return []
+  const out = []
+  for (const [code, looks] of Object.entries(agg.peekKeys)) {
+    const presses = agg.keys[code]?.n ?? 0
+    if (looks < minLooks || presses === 0) continue
+    const lift = looks / totalLooks / (presses / totalPresses)
+    if (lift >= 1.5) out.push({ code, looks, presses, lift })
+  }
+  return out.sort((a, b) => b.lift * Math.sqrt(b.looks) - a.lift * Math.sqrt(a.looks))
+}
+
 // ---- aggregation -----------------------------------------------------------
 
 function mergeStat(into, from) {
@@ -137,7 +186,7 @@ function mergeStat(into, from) {
 
 /** Merge many per-session analyses into a single aggregate. */
 export function aggregateAnalyses(list) {
-  const agg = { sessions: 0, keys: {}, confusions: {}, bigrams: {}, chars: {}, shift: { n: 0, err: 0 }, extra: 0 }
+  const agg = { sessions: 0, keys: {}, confusions: {}, bigrams: {}, chars: {}, shift: { n: 0, err: 0 }, extra: 0, peekKeys: {} }
   for (const a of list) {
     if (!a || a.v !== 1) continue
     agg.sessions++
@@ -152,6 +201,7 @@ export function aggregateAnalyses(list) {
     agg.shift.n += a.shift?.n ?? 0
     agg.shift.err += a.shift?.err ?? 0
     agg.extra += a.extra ?? 0
+    for (const [c, n] of Object.entries(a.peek?.keys ?? {})) agg.peekKeys[c] = (agg.peekKeys[c] ?? 0) + n
   }
   return agg
 }

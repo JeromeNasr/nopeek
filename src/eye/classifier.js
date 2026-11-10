@@ -11,6 +11,39 @@
 
 import { projectScore } from './calibration.js'
 
+/**
+ * One-Euro filter (Casiez et al.): heavy smoothing while the signal is steady,
+ * almost none while it moves fast – low jitter without adding lag to real looks.
+ */
+export class OneEuro {
+  constructor(minCutoff = 1.2, beta = 0.6, dCutoff = 1) {
+    this.minCutoff = minCutoff
+    this.beta = beta
+    this.dCutoff = dCutoff
+    this.reset()
+  }
+  reset() {
+    this.x = null
+    this.dx = 0
+    this.t = null
+  }
+  filter(x, t) {
+    if (this.x == null || t <= this.t) {
+      this.x = x
+      this.t = t
+      return x
+    }
+    const dt = Math.min(0.5, (t - this.t) / 1000)
+    const alpha = (cut) => 1 / (1 + 1 / (2 * Math.PI * cut * dt))
+    const dx = (x - this.x) / dt
+    this.dx += alpha(this.dCutoff) * (dx - this.dx)
+    const a = alpha(this.minCutoff + this.beta * Math.abs(this.dx))
+    this.x += a * (x - this.x)
+    this.t = t
+    return this.x
+  }
+}
+
 export const STATE = Object.freeze({
   SCREEN: 'screen',
   KEYBOARD: 'keyboard',
@@ -40,7 +73,6 @@ export const DEFAULT_PARAMS = {
   yawAwayDeg: 22,
   gazeAwayH: 0.22,
   upScore: -0.9,
-  smooth: 0.55, // weight of the newest score in the exponential smoother
   driftRate: 0.002,
   minConfidence: 0.5,
 }
@@ -65,16 +97,23 @@ export function frameConfidence(f, brightness = null) {
  * Score one frame. Pure function: no temporal logic.
  * @returns {{ label: 'screen'|'down'|'away'|'blink'|'uncertain', t: number|null, z: object, confidence: number, reason?: string }}
  */
-export function scoreFrame(profile, f, { params = DEFAULT_PARAMS, offset = null, brightness = null, inKeyboard = false, openBaseline = null } = {}) {
+export function scoreFrame(profile, f, { params = DEFAULT_PARAMS, offset = null, brightness = null, inKeyboard = false, smooth = null } = {}) {
   const confidence = frameConfidence(f, brightness)
-  const open = openBaseline ?? profile.screen.openness?.median ?? null
-  if (f.openness != null && open && f.openness < open * params.blinkOpenRatio) {
+  // Blink detection must not swallow keyboard looks: eyelids lower when you look down,
+  // so thresholds are set relative to how THIS user's eyes look during a keyboard look.
+  const openS = profile.screen.openness?.median ?? null
+  const openD = profile.down?.openness?.median ?? openS
+  const blinkD = profile.down?.blink?.median ?? null
+  const byShape = f.blink != null && blinkD != null && f.blink > Math.max(0.6, blinkD + 0.25)
+  const byLids = f.openness != null && openS != null && f.openness < Math.min(openS * params.blinkOpenRatio, (openD ?? openS) * 0.7)
+  if (byShape || byLids) {
     return { label: 'blink', t: null, z: {}, confidence }
   }
   if (confidence < params.minConfidence) return { label: 'uncertain', t: null, z: {}, confidence, reason: 'low-confidence' }
 
-  const { t, z } = projectScore(profile, f, offset)
-  if (t == null) return { label: 'uncertain', t: null, z, confidence, reason: 'no-signal' }
+  const { t: raw, z } = projectScore(profile, f, offset)
+  if (raw == null) return { label: 'uncertain', t: null, z, confidence, reason: 'no-signal' }
+  const t = smooth ? smooth(raw) : raw
 
   // Away: head turned sideways, eyes far to the side, or looking well above the screen.
   const sYaw = profile.screen.yaw
@@ -122,8 +161,9 @@ export class GazeTracker {
     this.goodStreak = 0
     this.uncertainSince = null
     this.blinkSince = null
-    this.tSmooth = null
-    this.offset = { pitch: 0, gazeV: 0, gazeLid: 0, yaw: 0 }
+    this.filter?.reset()
+    this.filter ??= new OneEuro()
+    this.offset = { pitch: 0, gazeV: 0, gazeLid: 0, lookDown: 0, yaw: 0 }
     this.keyboardStart = null
     this.awayStart = null
     this.last = { label: 'none', t: null, confidence: 0 }
@@ -159,6 +199,7 @@ export class GazeTracker {
 
     if (!features) {
       this.goodStreak = 0
+      this.filter.reset()
       if (this.lastFaceT == null || t - this.lastFaceT > p.noFaceGraceMs) {
         this._closeOpenPeriods(t, emit)
         this._set(STATE.UNAVAILABLE, t)
@@ -174,6 +215,7 @@ export class GazeTracker {
       offset: this.offset,
       brightness,
       inKeyboard: this.state === STATE.KEYBOARD,
+      smooth: (x) => this.filter.filter(x, t),
     })
     this.last = frame
 
@@ -187,8 +229,6 @@ export class GazeTracker {
       this._set(STATE.UNCERTAIN, t)
       this.uncertainSince = t
     }
-
-    if (frame.t != null) this.tSmooth = this.tSmooth == null ? frame.t : p.smooth * frame.t + (1 - p.smooth) * this.tSmooth
 
     switch (frame.label) {
       case 'blink': {
@@ -285,11 +325,28 @@ export class GazeTracker {
   }
 
   /** Slowly follow posture changes, but only while clearly looking at the screen. */
+  /**
+   * Instantly re-centre the screen baseline from a short burst of frames captured
+   * while the user looks at the screen (after shifting in the chair, moving the laptop…).
+   */
+  recenter(samples) {
+    const ok = samples.filter(Boolean)
+    if (ok.length < 8) return false
+    for (const key of ['pitch', 'gazeV', 'gazeLid', 'lookDown', 'yaw']) {
+      const base = this.profile.screen[key]
+      const vals = ok.map((f) => f[key]).filter((x) => Number.isFinite(x)).sort((a, b) => a - b)
+      if (!base || !vals.length) continue
+      this.offset[key] = vals[vals.length >> 1] - base.median
+    }
+    this.filter.reset()
+    return true
+  }
+
   adaptFrom(features) {
     // Called by the orchestrator with the raw features of each frame.
     if (this.state !== STATE.SCREEN || !features || this.last.t == null || this.last.t > 0.25 || this.last.t < -0.4) return
     const rate = this.params.driftRate
-    for (const key of ['pitch', 'gazeV', 'gazeLid', 'yaw']) {
+    for (const key of ['pitch', 'gazeV', 'gazeLid', 'lookDown', 'yaw']) {
       const base = this.profile.screen[key]
       const x = features[key]
       if (!base || x == null) continue
@@ -306,7 +363,6 @@ export class GazeTracker {
       since: this.stateSince,
       label: this.last.label,
       score: this.last.t ?? null,
-      smoothScore: this.tSmooth,
       confidence: this.last.confidence ?? 0,
       reason: this.last.reason,
       candidate: this.cand?.label ?? null,

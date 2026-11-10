@@ -8,9 +8,11 @@ import { mergeLayoutObservations, newId, saveSession } from '../data/repo.js'
 import { useTraining } from '../data/trainingContext.js'
 import { TypingEngine } from '../engine/typingEngine.js'
 import { STATE } from '../eye/classifier.js'
+import { usePrefs } from '../lib/prefs.js'
+import { playKey, playTick } from '../lib/sound.js'
 import { eye } from '../eye/session.js'
 import { useEye, useEyeTracking } from '../eye/useEye.js'
-import { analyzeKeystrokes } from '../training/analysis.js'
+import { analyzeKeystrokes, attributePeeks } from '../training/analysis.js'
 import { FINGERS, ISO_ONLY_CODES, charToKey, profileFingerOfCode } from '../training/keyboard.js'
 import { evaluateRun } from '../training/lessons.js'
 
@@ -35,12 +37,12 @@ function LiveHud({ engine, timeLimitMs, totalWords }) {
   return (
     <div className="flex items-end gap-6 font-mono" aria-label="Live statistics">
       {timeLimitMs ? (
-        <div><p className="text-xs uppercase tracking-wider text-zinc-500">Time</p><p className="text-3xl font-semibold tabular-nums text-emerald-300">{started ? remaining : timeLimitMs / 1000}</p></div>
+        <div><p className="font-sans text-[0.65rem] font-semibold uppercase tracking-[0.16em] text-zinc-500">Time</p><p className="gradient-text text-4xl font-semibold tabular-nums">{started ? remaining : timeLimitMs / 1000}</p></div>
       ) : (
-        <div><p className="text-xs uppercase tracking-wider text-zinc-500">Words</p><p className="text-3xl font-semibold tabular-nums text-emerald-300">{wi}/{totalWords}</p></div>
+        <div><p className="font-sans text-[0.65rem] font-semibold uppercase tracking-[0.16em] text-zinc-500">Words</p><p className="gradient-text text-4xl font-semibold tabular-nums">{wi}/{totalWords}</p></div>
       )}
-      <div><p className="text-xs uppercase tracking-wider text-zinc-500">WPM</p><p className="text-3xl font-semibold tabular-nums text-white">{started ? live.wpm : '–'}</p></div>
-      <div><p className="text-xs uppercase tracking-wider text-zinc-500">Acc</p><p className="text-3xl font-semibold tabular-nums text-white">{live.accuracy == null ? '–' : `${Math.round(live.accuracy)}%`}</p></div>
+      <div><p className="font-sans text-[0.65rem] font-semibold uppercase tracking-[0.16em] text-zinc-500">WPM</p><p className="text-4xl font-semibold tabular-nums text-white">{started ? live.wpm : '–'}</p></div>
+      <div><p className="font-sans text-[0.65rem] font-semibold uppercase tracking-[0.16em] text-zinc-500">Acc</p><p className="text-4xl font-semibold tabular-nums text-white">{live.accuracy == null ? '–' : `${Math.round(live.accuracy)}%`}</p></div>
     </div>
   )
 }
@@ -68,8 +70,11 @@ function EyesUpHint() {
  * @param {object} props.meta  { mode, modeKey?, lessonId?, practiceKind?, title? }
  * @param {object} [props.lesson]
  */
-export default function SessionRunner({ makeRun, meta, lesson = null, showKeyboard = false, Actions = null, actionsProps = null }) {
+export default function SessionRunner({ makeRun, meta, lesson = null, showKeyboard = false, guideMode = null, metronome = false, Actions = null, actionsProps = null }) {
   const { profile, sessions, refresh } = useTraining()
+  const prefs = usePrefs()
+  const [hesitating, setHesitating] = useState(true)
+  const hesitateTimer = useRef(null)
   const eyeState = useEyeTracking(true)
   const [attempt, setAttempt] = useState(0)
   const [, bump] = useReducer((x) => x + 1, 0)
@@ -102,6 +107,8 @@ export default function SessionRunner({ makeRun, meta, lesson = null, showKeyboa
   }, [engine])
 
   const restart = useCallback(() => {
+    delete document.documentElement.dataset.typing
+    setHesitating(true)
     setAttempt((a) => a + 1)
     eye.endSession()
     requestAnimationFrame(() => inputRef.current?.focus())
@@ -125,6 +132,8 @@ export default function SessionRunner({ makeRun, meta, lesson = null, showKeyboa
     eyeEngine.current = null
     const summary = engine.summary()
     const analysis = analyzeKeystrokes(engine.log, profile)
+    if (tracking.status === 'measured' || tracking.status === 'partial') analysis.peek = attributePeeks(engine.log, tracking.peekTimes, profile)
+    delete document.documentElement.dataset.typing
     const keystrokes = summary.correctKeys + summary.incorrectKeys
     const check = lesson ? evaluateRun(lesson, summary) : null
     const mistakes = Object.entries(analysis.keys)
@@ -134,8 +143,9 @@ export default function SessionRunner({ makeRun, meta, lesson = null, showKeyboa
       .slice(0, 5)
     const result = { ...summary, tracking }
     const tooShort = summary.durationMs < MIN_RECORD_MS || keystrokes < MIN_RECORD_KEYS
+    const peekCodes = Object.entries(analysis.peek?.keys ?? {}).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([code, n]) => ({ code, n }))
     setOutcome({
-      engine, result, check, mistakes,
+      engine, result, check, mistakes, peekCodes,
       saveStatus: tooShort ? 'Too short to record – only runs of at least 5 seconds count toward your stats.' : 'Saving…',
     })
 
@@ -180,9 +190,17 @@ export default function SessionRunner({ makeRun, meta, lesson = null, showKeyboa
     (changed) => {
       if (!changed) return
       bump()
-      if (engine.finished) finalize()
+      if (engine.finished) {
+        finalize()
+        return
+      }
+      // focus mode: fade the chrome while typing; smart guide: hide the hint until you hesitate
+      if (prefs.focusMode && engine.started) document.documentElement.dataset.typing = '1'
+      setHesitating(false)
+      clearTimeout(hesitateTimer.current)
+      hesitateTimer.current = setTimeout(() => setHesitating(true), 1100)
     },
-    [engine, finalize],
+    [engine, finalize, prefs.focusMode],
   )
 
   // timer for timed tests
@@ -223,9 +241,11 @@ export default function SessionRunner({ makeRun, meta, lesson = null, showKeyboa
         obs.current.pairs[k] = (obs.current.pairs[k] ?? 0) + 1
       }
       if (ISO_ONLY_CODES.has(e.code)) obs.current.iso = true
-      settle(engine.insertChar(e.key, { t, code: e.code }))
+      const changed = engine.insertChar(e.key, { t, code: e.code })
+      if (changed && prefs.sound !== 'off') playKey(prefs.sound, engine.log[engine.log.length - 1]?.ok !== false)
+      settle(changed)
     },
-    [engine, restart, settle, ensureEye],
+    [engine, restart, settle, ensureEye, prefs.sound],
   )
 
   // Virtual keyboards / IME: keydown reports no usable key, so take text from input events.
@@ -257,6 +277,32 @@ export default function SessionRunner({ makeRun, meta, lesson = null, showKeyboa
     [engine, settle, ensureEye],
   )
 
+  // leave focus mode on mouse movement, restart or unmount
+  useEffect(() => {
+    const clear = () => { delete document.documentElement.dataset.typing }
+    window.addEventListener('mousemove', clear)
+    return () => {
+      window.removeEventListener('mousemove', clear)
+      clear()
+      clearTimeout(hesitateTimer.current)
+    }
+  }, [engine])
+
+  // optional metronome for rhythm drills: one tick per key at ~90% of your usual pace
+  const [metroOn, setMetroOn] = useState(false)
+  const avgWpm = useMemo(() => {
+    const r = sessions.slice(-10).map((s) => s.wpm).filter((v) => v > 0)
+    return r.length >= 3 ? r.reduce((a, b) => a + b, 0) / r.length : null
+  }, [sessions])
+  const bestWpm = useMemo(() => (sessions.length >= 3 ? Math.max(...sessions.map((s) => s.wpm)) : null), [sessions])
+  const metroMs = Math.round(60000 / (Math.max(15, (avgWpm ?? 30) * 0.9) * 5))
+  useEffect(() => {
+    if (!metronome || !metroOn) return undefined
+    let n = 0
+    const id = setInterval(() => playTick(n++ % 4 === 0), metroMs)
+    return () => clearInterval(id)
+  }, [metronome, metroOn, metroMs, engine])
+
   // typing anywhere on the page focuses the input
   useEffect(() => {
     const onWindowKey = (e) => {
@@ -277,6 +323,10 @@ export default function SessionRunner({ makeRun, meta, lesson = null, showKeyboa
   const shiftCode = nextKey?.shift ? (nextFinger?.[0] === 'l' ? 'ShiftRight' : 'ShiftLeft') : null
   const targets = nextKey ? [nextKey.code, ...(shiftCode ? [shiftCode] : [])] : []
 
+  const ghostWpm = meta.mode === 'lesson' || prefs.ghost === 'off' ? null : prefs.ghost === 'best' ? bestWpm : avgWpm
+  const guide = guideMode ?? (showKeyboard ? (prefs.guide === 'off' ? 'smart' : prefs.guide) : 'off')
+  const showTarget = guide === 'always' || (guide === 'smart' && hesitating)
+
   if (shown) {
     return (
       <Results
@@ -284,6 +334,7 @@ export default function SessionRunner({ makeRun, meta, lesson = null, showKeyboa
         result={shown.result}
         lessonCheck={shown.check}
         mistakeCodes={shown.mistakes}
+        peekCodes={shown.peekCodes}
         layout={profile.layout}
         history={sessions}
         saveStatus={shown.saveStatus}
@@ -298,7 +349,7 @@ export default function SessionRunner({ makeRun, meta, lesson = null, showKeyboa
   }
 
   return (
-    <div className="mx-auto w-full max-w-4xl">
+    <div className="mx-auto w-full max-w-4xl animate-fade-up">
       <div className="mb-5 flex flex-wrap items-center justify-between gap-4">
         <LiveHud engine={engine} timeLimitMs={run.timeLimitMs} totalWords={totalWords} />
         <div className="flex flex-col items-end gap-1.5">
@@ -308,7 +359,7 @@ export default function SessionRunner({ makeRun, meta, lesson = null, showKeyboa
       </div>
       <RunProgress engine={engine} timeLimitMs={run.timeLimitMs} totalWords={totalWords} />
 
-      <div className="relative mt-4 rounded-xl border border-zinc-800 bg-zinc-900/40 p-6 sm:p-8">
+      <div className="card relative mt-4 p-6 sm:p-9" style={{ animation: 'none' }}>
         <textarea
           ref={inputRef}
           aria-label="Typing input"
@@ -321,22 +372,25 @@ export default function SessionRunner({ makeRun, meta, lesson = null, showKeyboa
           onFocus={() => setFocused(true)}
           onBlur={() => setFocused(false)}
         />
-        <TypingArea engine={engine} version={engine.version} focused={focused} onFocusRequest={() => inputRef.current?.focus()} />
+        <TypingArea engine={engine} version={engine.version} focused={focused} onFocusRequest={() => inputRef.current?.focus()} ghostWpm={ghostWpm} ghostLabel={prefs.ghost === 'best' ? 'your best' : 'your average'} />
       </div>
 
-      <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-xs text-zinc-500">
-        <span><kbd className="rounded bg-zinc-800 px-1.5 py-0.5 text-zinc-300">Esc</kbd> restart · <kbd className="rounded bg-zinc-800 px-1.5 py-0.5 text-zinc-300">Ctrl</kbd>+<kbd className="rounded bg-zinc-800 px-1.5 py-0.5 text-zinc-300">⌫</kbd> delete word</span>
-        <Button variant="ghost" size="sm" onClick={restart}>Restart</Button>
+      <div className="chrome mt-4 flex flex-wrap items-center justify-between gap-3 text-xs text-zinc-500">
+        <span><kbd className="rounded-md border border-white/10 bg-white/[0.05] px-1.5 py-0.5 text-zinc-300">Esc</kbd> restart · <kbd className="rounded-md border border-white/10 bg-white/[0.05] px-1.5 py-0.5 text-zinc-300">Ctrl</kbd>+<kbd className="rounded-md border border-white/10 bg-white/[0.05] px-1.5 py-0.5 text-zinc-300">⌫</kbd> delete word</span>
+        <span className="flex items-center gap-1">
+          {metronome && <Button variant={metroOn ? 'secondary' : 'ghost'} size="sm" aria-pressed={metroOn} onClick={() => setMetroOn((v) => !v)}>{metroOn ? `Metronome on · ${metroMs} ms` : 'Metronome'}</Button>}
+          <Button variant="ghost" size="sm" onClick={restart}>Restart</Button>
+        </span>
       </div>
 
-      {showKeyboard && (
-        <div className="mt-6 rounded-xl border border-zinc-800 bg-zinc-900/30 p-4">
+      {guide !== 'off' && (
+        <div className={`kb-guide chrome-keep mt-6 rounded-2xl border border-white/[0.06] bg-white/[0.02] p-4 ${showTarget ? '' : 'resting'}`}>
           <p className="mb-3 h-5 text-sm text-zinc-400">
-            {nextFinger && nextKey
+            {!showTarget ? <span className="text-zinc-600">Hints appear only when you pause – trust your fingers.</span> : nextFinger && nextKey
               ? <>Next key: use your <strong className="text-white">{FINGERS[nextFinger].label.toLowerCase()}</strong>{nextKey.shift ? ' (and the opposite Shift)' : ''}</>
               : engine.currentTyped.length >= engine.currentWord.length ? 'Space with your thumb' : ''}
           </p>
-          <Keyboard profile={profile} highlight={lesson?.keys ?? null} target={targets} />
+          <Keyboard profile={profile} highlight={lesson?.keys ?? null} target={showTarget ? targets : []} />
         </div>
       )}
 

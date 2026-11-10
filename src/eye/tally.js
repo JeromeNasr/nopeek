@@ -132,6 +132,8 @@ export class SessionTally {
       discipline: scored && measured > 0 ? r1((1 - keyboardMs / measured) * 100) : null,
       peeksPerMin: scored && measured > 0 ? r1(this.peeks.length / (measured / 60000)) : null,
       calibrationLevel: this.quality ?? null,
+      // when each keyboard look happened (ms from the first keystroke); used to find peek-trigger keys
+      peekTimes: this.peeks.slice(0, 80).map((p) => ({ startMs: Math.round(p.startMs), durationMs: Math.round(p.durationMs) })),
     }
   }
 }

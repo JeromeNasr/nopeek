@@ -136,7 +136,7 @@ export class FaceTracker {
         baseOptions: { modelAssetPath: MODEL_PATH, delegate },
         runningMode: 'VIDEO',
         numFaces: 1,
-        outputFaceBlendshapes: false,
+        outputFaceBlendshapes: true,
         outputFacialTransformationMatrixes: true,
         minFaceDetectionConfidence: 0.5,
         minFacePresenceConfidence: 0.5,
@@ -200,7 +200,7 @@ export class FaceTracker {
       const res = this.landmarker.detectForVideo(v, now)
       const lm = res.faceLandmarks?.[0]
       const matrix = res.facialTransformationMatrixes?.[0]?.data ?? null
-      return lm ? extractFeatures(lm, matrix, v.videoWidth, v.videoHeight) : null
+      return lm ? extractFeatures(lm, matrix, v.videoWidth, v.videoHeight, res.faceBlendshapes?.[0]?.categories ?? null) : null
     } catch {
       return null
     }
