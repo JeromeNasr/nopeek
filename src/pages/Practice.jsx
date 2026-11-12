@@ -29,7 +29,7 @@ function Runner({ spec }) {
     <div className="mx-auto max-w-5xl px-6 py-8">
       <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
         <div>
-          <p className="text-xs font-medium uppercase tracking-wider text-emerald-400">Practice</p>
+          <p className="text-xs font-medium  text-emerald-400">Practice</p>
           <h1 className="text-xl font-semibold text-white">{spec.label ?? GENERIC.find((g) => g.kind === spec.kind)?.title ?? (spec.kind === 'keys' ? `Keys: ${spec.chars.join(' ').toUpperCase()}` : spec.kind === 'bigrams' ? `Pairs: ${spec.grams.join(', ')}` : 'Targeted drill')}</h1>
         </div>
         <Button variant="ghost" size="sm" onClick={() => navigate('/practice')}>← All drills</Button>
@@ -87,10 +87,10 @@ export default function Practice() {
       )}
 
       <h2 className="mb-3 mt-10 text-lg font-semibold text-white">Focus drills</h2>
-      <ul className="stagger grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+      <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {GENERIC.map((g) => (
           <li key={g.kind}>
-            <button type="button" onClick={() => start({ kind: g.kind })} className="card card-hover h-full w-full p-4 text-left" style={{ animation: 'none' }}>
+            <button type="button" onClick={() => start({ kind: g.kind })} className="card card-hover h-full w-full p-4 text-left">
               <p className="font-medium text-white">{g.title}</p>
               <p className="mt-1 text-sm text-zinc-500">{g.desc}</p>
             </button>
@@ -104,7 +104,7 @@ export default function Practice() {
           <p className="mt-1 text-sm text-zinc-500">Type the letters you want to drill.</p>
           <form className="mt-3 flex gap-2" onSubmit={(e) => { e.preventDefault(); const chars = [...new Set(keysInput.toLowerCase().replace(/[^a-z]/g, ''))]; if (chars.length) start({ kind: 'keys', chars }) }}>
             <input aria-label="Letters to practise" value={keysInput} onChange={(e) => setKeysInput(e.target.value)} placeholder="e.g. qzx" maxLength={12}
-              className="w-full rounded-xl border border-white/10 bg-zinc-950/60 px-3 py-2 font-mono text-sm outline-none focus:border-emerald-600" />
+              className="w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 font-mono text-sm outline-none focus:border-emerald-600" />
             <Button type="submit" size="sm" disabled={!/[a-z]/i.test(keysInput)}>Start</Button>
           </form>
         </Card>

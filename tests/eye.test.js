@@ -309,12 +309,12 @@ describe('screen vs keyboard classification (simulated)', () => {
     expect(tracker.driftRatio()).toBeLessThan(0.6)
   })
 
-  it('scoreFrame flags disagreeing signals as uncertain with a reason', () => {
+  it('scoreFrame flags head-down-with-eyes-up as uncertain with a reason', () => {
     const profile = buildProfile(calibrationSamples(user))
     const f = { pitch: 14, gazeV: -0.03, gazeLid: 0.4, lookDown: -0.1, blink: 0.08, yaw: 0, gazeH: 0, roll: 0, openness: 0.3, faceWidth: 0.36, marginFrac: 0.2, eyeDisagreement: 0 }
     const s = scoreFrame(profile, f)
     expect(s.label).toBe('uncertain')
-    expect(s.reason).toBe('signals-disagree')
+    expect(s.reason).toBe('head-down-eyes-up')
   })
 
   it('sensitivity setting trades latency for stability', () => {
@@ -461,5 +461,55 @@ describe('v3 tracking upgrades', () => {
     for (const f of after) { const o = g.update(f.t, f.features); peeks += o.events.filter((e) => e.type === 'peek-start').length; if (f.kind === 'screen' && f.t < 13500 && o.label !== 'screen') bad++ }
     expect(peeks).toBe(1)
     expect(bad).toBeLessThan(8)
+  })
+})
+
+describe('v4: several ways of looking at the keyboard', () => {
+  // This user sometimes tilts their head to look down and sometimes drops only their eyes.
+  const user = makeUser()
+  const tilt = { pitch: 16, gazeV: 0.012, gazeLid: 0.03, lookDown: 0.1 }
+  const eyesOnly = { pitch: 1.5, gazeV: 0.07, gazeLid: 0.16, lookDown: 0.5 }
+  const capture = (delta, seed) => run(makeUser({ downDelta: delta }), [{ kind: 'down', ms: 3000 }], { seed }).map((f) => f.features)
+  const base = calibrationSamples(user)
+  const segA = capture(tilt, 'a')
+  const segB = capture(eyesOnly, 'b')
+  const profile = buildProfile({ screen: base.screen, screenSegments: base.screenSegments, down: [...segA, ...segB], downSegments: [segA, segB] })
+
+  const peeksFor = (delta, seed) => {
+    const u = makeUser({ downDelta: delta })
+    const sc = []
+    for (let i = 0; i < 10; i++) sc.push({ kind: 'screen', ms: 3000 }, { kind: 'down', ms: 1000 })
+    sc.push({ kind: 'screen', ms: 2000 })
+    const g = new GazeTracker(profile, paramsFor())
+    let n = 0
+    for (const f of run(u, sc, { seed })) n += g.update(f.t, f.features).events.filter((e) => e.type === 'peek-start').length
+    return n
+  }
+
+  it('keeps one prototype per distinct style', () => {
+    expect(profile.ok).toBe(true)
+    expect(profile.protos.length).toBe(2)
+    expect(profile.quality.styles).toBe(2)
+  })
+
+  it('detects head-tilt peeks AND eyes-only peeks (an eyes-only peek is not "signals disagree")', () => {
+    expect(peeksFor(tilt, 't1')).toBeGreaterThanOrEqual(9)
+    expect(peeksFor(eyesOnly, 'e1')).toBeGreaterThanOrEqual(9)
+  })
+
+  it('still produces no peeks for pure screen-looking and nodding', () => {
+    const g = new GazeTracker(profile, paramsFor())
+    let n = 0
+    for (const f of run(user, [{ kind: 'screen', ms: 40000 }, { kind: 'screen-low', ms: 15000 }, { kind: 'nod', ms: 3000 }, { kind: 'screen', ms: 10000 }], { seed: 'q' })) {
+      n += g.update(f.t, f.features).events.filter((e) => e.type === 'peek-start').length
+    }
+    expect(n).toBe(0)
+  })
+
+  it('chooses thresholds from this user\'s own score distributions, within safe bounds', () => {
+    const th = profile.thresholds
+    expect(th.enter).toBeGreaterThanOrEqual(0.58)
+    expect(th.enter).toBeLessThanOrEqual(0.82)
+    expect(th.exit).toBeLessThan(th.enter)
   })
 })

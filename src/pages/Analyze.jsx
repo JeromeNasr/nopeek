@@ -25,7 +25,7 @@ const TRACK_BADGE = {
 function Q({ title, tone, items, empty }) {
   return (
     <Card>
-      <h3 className={cx('text-sm font-semibold uppercase tracking-wider', tone)}>{title}</h3>
+      <h3 className={cx('text-sm font-semibold ', tone)}>{title}</h3>
       {items.length === 0 ? <p className="mt-3 text-sm text-zinc-500">{empty}</p> : (
         <ul className="mt-3 space-y-2.5">
           {items.map((i) => (
@@ -45,7 +45,7 @@ function Table({ head, rows, empty }) {
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-left text-sm">
-        <thead className="text-xs uppercase tracking-wider text-zinc-500"><tr>{head.map((h) => <th key={h} className="py-2 pr-4 font-medium">{h}</th>)}</tr></thead>
+        <thead className="text-xs  text-zinc-500"><tr>{head.map((h) => <th key={h} className="py-2 pr-4 font-medium">{h}</th>)}</tr></thead>
         <tbody className="divide-y divide-zinc-800/70">{rows.map((r, i) => <tr key={i} className="text-zinc-300">{r.map((c, j) => <td key={j} className="whitespace-nowrap py-2 pr-4 tabular-nums">{c}</td>)}</tr>)}</tbody>
       </table>
     </div>
@@ -98,7 +98,7 @@ export default function Analyze() {
   if (sessions.length === 0) {
     return (
       <div className="mx-auto max-w-6xl px-6 py-10">
-        <PageHeader title="Analyze" subtitle="Measured performance, problem areas and eye-tracking results." />
+        <PageHeader title="Stats" />
         <EmptyState title="No sessions yet" action={<div className="flex justify-center gap-3"><Button to="/learn">Start Lesson 1</Button><Button variant="secondary" to="/test">Take a test</Button></div>}>
           Finish a lesson, drill or test and your results appear here. Nothing on this page is estimated – every figure comes from a session you typed.
         </EmptyState>
@@ -114,7 +114,7 @@ export default function Analyze() {
 
   return (
     <div className="mx-auto max-w-6xl px-6 py-10">
-      <PageHeader title="Analyze" subtitle="What you are doing well, what you are struggling with, what has improved, and what to practise next." />
+      <PageHeader title="Stats" subtitle="Everything here is measured from runs you typed. Nothing is estimated." />
 
       {t.cloudError && <Notice tone="warn" className="mb-4" title="Could not load your cloud history">{t.cloudError}. Showing sessions saved on this device.</Notice>}
       {t.signedIn && t.pendingLocal > 0 && (
@@ -141,9 +141,9 @@ export default function Analyze() {
 
       <section aria-label="Summary" className="mt-8 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <Q title="Doing well" tone="text-emerald-400" items={story.good} empty={story.insufficient ? 'Complete a few more runs to see patterns.' : 'Nothing stands out yet – keep going.'} />
-        <Q title="Struggling with" tone="text-amber-400" items={story.bad} empty={story.insufficient ? 'Complete a few more runs to see patterns.' : 'No statistically supported weaknesses right now.'} />
-        <Q title="Improved" tone="text-sky-400" items={story.improved} empty="Improvement is shown once you have enough runs to compare newer with older ones." />
-        <Q title="Practise next" tone="text-violet-300" items={story.next} empty="Recommendations appear after a few sessions." />
+        <Q title="Struggling with" tone="text-[#d9a441]" items={story.bad} empty={story.insufficient ? 'Complete a few more runs to see patterns.' : 'No statistically supported weaknesses right now.'} />
+        <Q title="Improved" tone="text-zinc-300" items={story.improved} empty="Improvement is shown once you have enough runs to compare newer with older ones." />
+        <Q title="Practise next" tone="text-zinc-300" items={story.next} empty="Recommendations appear after a few sessions." />
       </section>
       <p className="mt-3 text-sm"><Link className="text-emerald-400 underline" to="/improve">See full recommendations and goals →</Link></p>
 
@@ -151,7 +151,7 @@ export default function Analyze() {
         <h2 className="text-lg font-semibold text-white">Progress over time</h2>
         <p className="mb-3 mt-1 text-sm text-zinc-400">Speed and accuracy for your last {chartData.length} session{chartData.length === 1 ? '' : 's'}.</p>
         <Suspense fallback={<Spinner />}>
-          <ProgressChart data={chartData} lines={[{ key: 'wpm', name: 'WPM', color: '#34d399' }, { key: 'accuracy', name: 'Accuracy %', color: '#60a5fa', axis: 'right' }]} rightDomain={[70, 100]} />
+          <ProgressChart data={chartData} lines={[{ key: 'wpm', name: 'wpm', color: 'var(--accent)' }, { key: 'accuracy', name: 'accuracy %', color: 'var(--n-400)', axis: 'right' }]} rightDomain={[70, 100]} />
         </Suspense>
         {summary.trend && <p className="mt-3 text-sm text-zinc-400">Newer half vs older half: speed {summary.trend.wpm >= 0 ? '+' : ''}{r1(summary.trend.wpm)} WPM, accuracy {summary.trend.accuracy >= 0 ? '+' : ''}{r1(summary.trend.accuracy)} points.</p>}
       </Card>
@@ -199,7 +199,7 @@ export default function Analyze() {
               <div><dt className="text-zinc-500">Typical gap</dt><dd className="text-xl tabular-nums text-white">{Math.round(rhythm.medianMs)} ms</dd></div>
               <div><dt className="text-zinc-500">Rhythm score</dt><dd className="text-xl tabular-nums text-white">{Math.round(rhythm.keyConsistency)}/100</dd></div>
               <div><dt className="text-zinc-500">Long pauses / run</dt><dd className="text-xl tabular-nums text-white">{r1(rhythm.pauses)}</dd></div>
-              <div><dt className="text-zinc-500">Burstiness</dt><dd className="text-xl tabular-nums text-white">{rhythm.burstiness == null ? '—' : `${r1(rhythm.burstiness)}×`}</dd></div>
+              <div><dt className="text-zinc-500">Burstiness</dt><dd className="text-xl tabular-nums text-white">{!rhythm.burstiness ? '–' : `${r1(rhythm.burstiness)}×`}</dd></div>
             </dl>
           )}
         </Card>
@@ -224,9 +224,9 @@ export default function Analyze() {
           {Object.entries(e.status).filter(([, n]) => n > 0).map(([k, n]) => { const [tone, label] = TRACK_BADGE[k] ?? ['neutral', 'Not recorded']; return <Badge key={k} tone={tone}>{label}: {n}</Badge> })}
         </div>
         {eyeData.length >= 2 ? (
-          <div className="mt-4"><Suspense fallback={<Spinner />}><ProgressChart height={220} data={eyeData} lines={[{ key: 'discipline', name: 'Visual discipline %', color: '#fbbf24', axis: 'left' }]} /></Suspense></div>
+          <div className="mt-4"><Suspense fallback={<Spinner />}><ProgressChart height={220} data={eyeData} lines={[{ key: 'discipline', name: 'eyes on screen %', color: 'var(--accent)', axis: 'left' }]} /></Suspense></div>
         ) : <p className="mt-4 text-sm text-zinc-500">{e.measuredSessions === 0 ? 'No measured runs yet. Calibrate in Setup and type with eye tracking on.' : 'At least two measured runs are needed for a trend.'}</p>}
-        <div className="mt-5 border-t border-white/[0.06] pt-4">
+        <div className="mt-5 border-t border-zinc-800 pt-4">
           <h3 className="font-medium text-white">Keys you look down for</h3>
           <p className="mt-1 text-sm text-zinc-400">Each keyboard look is matched to what you were typing at that moment. Keys listed here attract looks out of proportion to how often you type them.</p>
           {triggers.length === 0 ? <p className="mt-3 text-sm text-zinc-500">{e.measuredSessions === 0 ? 'Needs tracked runs.' : 'No key stands out yet – this needs a handful of recorded keyboard looks.'}</p> : (
@@ -248,10 +248,10 @@ export default function Analyze() {
       )}
 
       <Card className="mt-8 overflow-hidden !p-0">
-        <div className="border-b border-white/[0.08] px-5 py-4"><h2 className="text-lg font-semibold text-white">Recent sessions</h2></div>
+        <div className="border-b border-zinc-800 px-5 py-4"><h2 className="text-lg font-semibold text-white">Recent sessions</h2></div>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[720px] text-left text-sm">
-            <thead className="bg-zinc-950/60 text-xs uppercase tracking-wider text-zinc-500"><tr>
+            <thead className="bg-zinc-900 text-xs  text-zinc-500"><tr>
               {['Date', 'Type', 'WPM', 'Accuracy', 'Consistency', 'Eyes', 'Duration'].map((h) => <th key={h} className="px-5 py-3 font-medium">{h}</th>)}
             </tr></thead>
             <tbody className="divide-y divide-zinc-800">

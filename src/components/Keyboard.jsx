@@ -111,7 +111,7 @@ export function FingerLegend({ focusFinger, onFocus }) {
             type="button"
             onClick={() => onFocus?.(focusFinger === f ? null : f)}
             aria-pressed={focusFinger === f}
-            className={`flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs transition ${focusFinger === f ? 'border-white/60 bg-zinc-800 text-white' : 'border-white/[0.08] text-zinc-400 hover:border-zinc-600'}`}
+            className={`flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs transition ${focusFinger === f ? 'border-white/60 bg-zinc-800 text-white' : 'border-zinc-800 text-zinc-400 hover:border-zinc-600'}`}
           >
             <span className="h-2.5 w-2.5 rounded-sm" style={{ background: FINGER_COLORS[f] }} aria-hidden="true" />
             {FINGERS[f].label} <span className="text-zinc-600">{FINGERS[f].short}</span>

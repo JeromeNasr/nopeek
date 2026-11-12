@@ -57,7 +57,7 @@ export default function KeyboardSetup() {
           <legend className="mb-2 text-sm font-medium text-zinc-300">Layout</legend>
           <div className="space-y-1.5">
             {LAYOUT_IDS.map((id) => (
-              <label key={id} className={cx('flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm transition', draft.layout === id ? 'border-emerald-600/70 bg-emerald-500/5 text-white' : 'border-white/[0.08] text-zinc-400 hover:border-zinc-600')}>
+              <label key={id} className={cx('flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm transition', draft.layout === id ? 'border-emerald-600/70 bg-emerald-500/5 text-white' : 'border-zinc-800 text-zinc-400 hover:border-zinc-600')}>
                 <input type="radio" name="layout" checked={draft.layout === id} onChange={() => set({ layout: id, physical: LAYOUTS[id].defaultPhysical })} />
                 {LAYOUTS[id].label}
               </label>
@@ -75,13 +75,13 @@ export default function KeyboardSetup() {
 
         <fieldset>
           <legend className="mb-2 text-sm font-medium text-zinc-300">Physical shape</legend>
-          <div className="mb-3 inline-flex overflow-hidden rounded-lg border border-white/[0.08]" role="radiogroup" aria-label="ANSI or ISO">
-            {['ansi', 'iso'].map((p) => <button key={p} type="button" role="radio" aria-checked={draft.physical === p} onClick={() => set({ physical: p })} className={cx('px-4 py-1.5 text-sm uppercase', draft.physical === p ? 'bg-emerald-500/15 font-semibold text-emerald-300' : 'text-zinc-400')}>{p}</button>)}
+          <div className="mb-3 inline-flex overflow-hidden rounded-lg border border-zinc-800" role="radiogroup" aria-label="ANSI or ISO">
+            {['ansi', 'iso'].map((p) => <button key={p} type="button" role="radio" aria-checked={draft.physical === p} onClick={() => set({ physical: p })} className={cx('px-4 py-1.5 text-sm uppercase', draft.physical === p ? 'bg-emerald-500/15 font-semibold text-emerald-400' : 'text-zinc-400')}>{p}</button>)}
           </div>
           <p className="mb-3 text-xs text-zinc-500">ISO has a taller Enter and an extra key left of Z (common in the UK and Europe).</p>
           <div className="space-y-1.5">
             {Object.entries(FORM_FACTORS).map(([id, f]) => (
-              <label key={id} className={cx('flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm transition', draft.formFactor === id ? 'border-emerald-600/70 bg-emerald-500/5 text-white' : 'border-white/[0.08] text-zinc-400 hover:border-zinc-600')}>
+              <label key={id} className={cx('flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm transition', draft.formFactor === id ? 'border-emerald-600/70 bg-emerald-500/5 text-white' : 'border-zinc-800 text-zinc-400 hover:border-zinc-600')}>
                 <input type="radio" name="ff" checked={draft.formFactor === id} onChange={() => set({ formFactor: id })} /> {f.label}
               </label>
             ))}
@@ -93,7 +93,7 @@ export default function KeyboardSetup() {
           <legend className="mb-2 text-sm font-medium text-zinc-300">Key tester</legend>
           <p className="text-xs text-zinc-500">Press any key to see what your browser reports.</p>
           <input aria-label="Press keys here to test" readOnly placeholder="Click here, then press a key" onKeyDown={(e) => { e.preventDefault(); setTester({ code: e.code, key: e.key }) }}
-            className="mt-2 w-full rounded-xl border border-white/10 bg-zinc-950/60 px-3 py-2 text-sm outline-none focus:border-emerald-600" />
+            className="mt-2 w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-sm outline-none focus:border-emerald-600" />
           {tester && (
             <dl className="mt-3 space-y-1 text-sm">
               <div className="flex justify-between"><dt className="text-zinc-500">Physical key</dt><dd className="font-mono text-zinc-200">{tester.code}</dd></div>
@@ -106,7 +106,7 @@ export default function KeyboardSetup() {
         </fieldset>
       </div>
 
-      <div className="mt-6 rounded-xl border border-white/[0.08] bg-zinc-950/40 p-4">
+      <div className="mt-6 rounded-lg border border-zinc-800 bg-zinc-950/40 p-4">
         <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
           <p className="text-sm font-medium text-zinc-300">Preview &amp; finger assignments</p>
           <FingerLegend focusFinger={focusFinger} onFocus={setFocusFinger} />

@@ -4,6 +4,10 @@ import { consistencyFromCov, consistencyOf, wpmFromChars, accuracyPct } from '..
 import { generateWords, parseCustomText, normalizeTypography } from '../src/engine/textSources.js'
 import { createRng } from '../src/engine/random.js'
 import { simulate } from './helpers/typist.js'
+import { getChars } from '../src/vendor/monkeytype/frontend/src/ts/test/events/stats.ts'
+import { countChars } from '../src/vendor/monkeytype/frontend/src/ts/utils/strings.ts'
+
+const MT_getChars = (e) => getChars(e.eventLog())
 
 const type = (e, str, t0 = 0, gap = 100) => {
   let t = t0
@@ -45,9 +49,9 @@ describe('character validation and word flow', () => {
   it('space commits the word and records correctness', () => {
     const e = new TypingEngine({ words: ['hello', 'world'] })
     type(e, 'hello world')
-    expect(e.finished).toBe(true) // last word fully typed
-    expect(e.committed).toEqual([true])
-    expect(e.summary().wordsCorrect).toBe(1)
+    expect(e.finished).toBe(true) // last word typed correctly
+    expect(e.committed).toEqual([true, true])
+    expect(e.summary().wordsCorrect).toBe(2)
   })
 
   it('ignores leading and repeated spaces', () => {
@@ -64,14 +68,16 @@ describe('character validation and word flow', () => {
     type(e, 'he ')
     expect(e.committed).toEqual([false])
     expect(e.incorrectKeys).toBe(1) // the premature space
-    expect(e.charCounts().missed).toBe(3)
+    e.finishNow(1000)
+    expect(MT_getChars(e).missed).toBe(3)
   })
 
   it('extra characters are capped', () => {
     const e = new TypingEngine({ words: ['hi', 'there'] })
     type(e, 'h'.repeat(100))
-    expect(e.currentTyped.length).toBe(2 + MAX_EXTRA_CHARS)
-    expect(e.charCounts().extra).toBe(MAX_EXTRA_CHARS)
+    // Monkeytype: the limit is the word plus its commit space, plus 20
+    expect(e.currentTyped.length).toBe(3 + MAX_EXTRA_CHARS)
+    expect(e.charCounts().extra).toBeGreaterThanOrEqual(MAX_EXTRA_CHARS)
   })
 
   it('handles punctuation, numbers and capitals exactly', () => {
@@ -245,5 +251,67 @@ describe('text generation', () => {
   it('rng is reproducible', () => {
     const a = createRng('x'), b = createRng('x')
     expect([a(), a(), a()]).toEqual([b(), b(), b()])
+  })
+})
+
+describe('Monkeytype rules and statistics', () => {
+  it('uses Monkeytype countChars unmodified (correct word chars include the space)', () => {
+    expect(countChars('the ', 'the ', false)).toMatchObject({ correctWord: 4, allCorrect: 4, incorrect: 0 })
+    expect(countChars('teh ', 'the ', false)).toMatchObject({ correctWord: 0, incorrect: 2 })
+  })
+
+  it('the last word ends the test only when correct, or when space is pressed', () => {
+    const e = new TypingEngine({ words: ['one', 'two'], mode: 'words' })
+    type(e, 'one twx')
+    expect(e.finished).toBe(false) // wrong last letter: not finished (quick end is off)
+    e.backspace({ t: 900 })
+    type(e, 'o', 1000)
+    expect(e.finished).toBe(true)
+    const f = new TypingEngine({ words: ['one', 'two'], mode: 'words' })
+    type(f, 'one twx ')
+    expect(f.finished).toBe(true)
+    expect(f.summary().wordsCorrect).toBe(1)
+  })
+
+  it('stepping back into a wrong word removes its commit space', () => {
+    const e = new TypingEngine({ words: ['cat', 'dog', 'owl'] })
+    type(e, 'cxt ')
+    e.backspace({ t: 1000 })
+    expect(e.wi).toBe(0)
+    expect(e.inputs[0]).toBe('cxt')
+    const last = e.events[e.events.length - 1]
+    expect(last.data).toMatchObject({ inputType: 'deleteContentBackward', wordIndex: 0, inputValue: 'cxt' })
+  })
+
+  it('records a Monkeytype event log: keydown + input per key, timer start/end', () => {
+    const e = new TypingEngine({ words: ['hi', 'yo'], mode: 'words' })
+    type(e, 'hi yo')
+    const kinds = e.events.map((x) => x.type)
+    expect(kinds[0]).toBe('timer')
+    expect(kinds[kinds.length - 1]).toBe('timer')
+    expect(e.events.filter((x) => x.type === 'input')).toHaveLength(5)
+    expect(e.events.find((x) => x.type === 'input' && x.data.data === ' ').data.commitsWord).toBe(true)
+    expect(e.eventLog().context.targetWords).toEqual(['hi ', 'yo'])
+  })
+
+  it('WPM is Monkeytype\'s: correct-word characters (with spaces) / 5 per minute', () => {
+    const e = new TypingEngine({ words: ['hello', 'world', 'again'], mode: 'words' })
+    // 17 chars typed over exactly 6 s -> 17/5/0.1 = 34 wpm
+    let t = 0
+    for (const ch of 'hello world again') { e.insertChar(ch, { t }); t += 375 }
+    const s = e.summary()
+    expect(s.durationMs).toBe(6000)
+    expect(s.wpm).toBe(34)
+    expect(s.rawWpm).toBe(34)
+    expect(s.accuracy).toBe(100)
+  })
+
+  it('a wrong word contributes nothing to WPM but still counts toward raw', () => {
+    const e = new TypingEngine({ words: ['hello', 'world'], mode: 'words' })
+    let t = 0
+    for (const ch of 'hxllo world') { e.insertChar(ch, { t }); t += 600 }
+    const s = e.summary()
+    expect(s.wpm).toBeLessThan(s.rawWpm)
+    expect(s.chars.incorrect).toBe(1)
   })
 })

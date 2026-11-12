@@ -1,5 +1,5 @@
 import { Link } from 'react-router-dom'
-import { Badge, Button, Card, CountUp, Notice, Stat } from './ui.jsx'
+import { Badge, Button, Card, CountUp, Notice, SectionTitle, Stat } from './ui.jsx'
 import { cx } from '../lib/cx.js'
 import { codeLabel } from '../training/keyboard.js'
 import { TRACKING_STATUS } from '../eye/tally.js'
@@ -16,9 +16,9 @@ export function Sparkline({ series, raw = null, height = 80, label = 'WPM per se
   const y = (v) => height - 6 - ((v - lo) / (hi - lo || 1)) * (height - 12)
   const path = (arr) => arr.map((v, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(' ')
   return (
-    <svg viewBox={`0 0 ${w} ${height}`} className="h-20 w-full" role="img" aria-label={`${label}: from ${series[0]} to ${series[series.length - 1]}, peak ${Math.max(...series)}`} preserveAspectRatio="none">
-      {raw && <path d={path(raw)} fill="none" stroke="#52525b" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />}
-      <path className="draw-line" pathLength="1" style={{ '--len': 1 }} d={path(series)} fill="none" stroke="var(--accent)" strokeWidth="2.5" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
+    <svg viewBox={`0 0 ${w} ${height}`} className="h-24 w-full" role="img" aria-label={`${label}: from ${series[0]} to ${series[series.length - 1]}, peak ${Math.max(...series)}`} preserveAspectRatio="none">
+      {raw && <path d={path(raw)} fill="none" stroke="var(--n-700)" strokeWidth="1.5" vectorEffect="non-scaling-stroke" />}
+      <path className="draw-line" pathLength="1" d={path(series)} fill="none" stroke="var(--accent)" strokeWidth="2.5" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
     </svg>
   )
 }
@@ -68,7 +68,7 @@ export function EyeSummary({ tracking, history = [] }) {
         <p className="text-3xl font-semibold tabular-nums text-white">{t.discipline}%</p>
       </div>
       {delta != null && (
-        <p className={cx('mt-2 text-sm', delta >= 1 ? 'text-emerald-300' : delta <= -1 ? 'text-amber-300' : 'text-zinc-400')}>
+        <p className={cx('mt-2 text-sm', delta >= 1 ? 'text-emerald-400' : delta <= -1 ? 'text-[#d9a441]' : 'text-zinc-400')}>
           {delta >= 1 ? `Up ${delta.toFixed(0)} points` : delta <= -1 ? `Down ${Math.abs(delta).toFixed(0)} points` : 'About the same'} compared with your last {prior.length} tracked session{prior.length === 1 ? '' : 's'}.
         </p>
       )}
@@ -78,90 +78,78 @@ export function EyeSummary({ tracking, history = [] }) {
   )
 }
 
-export default function Results({ result, lessonCheck, mistakeCodes, peekCodes, layout, history, saveStatus, actions, title = 'Results' }) {
+export default function Results({ result, lessonCheck, mistakeCodes, peekCodes, layout, history, saveStatus, actions, title = 'result' }) {
   const r = result
-  const tone = (v, good, ok) => (v == null ? undefined : v >= good ? 'good' : v >= ok ? 'warn' : 'bad')
   const prev = history.filter((s) => s.wpm > 0)
   const best = prev.length ? Math.max(...prev.map((s) => s.wpm)) : null
   const isBest = best != null && prev.length >= 3 && r.wpm > best && (r.accuracy ?? 0) >= 90
   return (
-    <div className="mx-auto max-w-3xl space-y-5" aria-live="polite">
-      <div className="animate-scale-in text-center">
-        <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-400">{title}</p>
-        <p className="mt-2 text-7xl font-semibold tabular-nums tracking-tight sm:text-8xl">
-          <span className="gradient-text"><CountUp value={Math.round(r.wpm)} duration={900} /></span>
-          <span className="ml-2 text-2xl font-medium text-zinc-500">WPM</span>
-        </p>
-        {isBest && <p className="mt-2"><Badge tone="good">New personal best · previous {Math.round(best)}</Badge></p>}
+    <div className="page-enter mx-auto max-w-4xl" aria-live="polite">
+      <p className="text-xs text-zinc-500">{title}</p>
+      <div className="mt-2 grid gap-x-12 gap-y-8 md:grid-cols-[auto_1fr] md:items-end">
+        <div className="flex gap-10">
+          <div>
+            <p className="text-sm text-zinc-500">wpm</p>
+            <p className="font-mono text-7xl font-medium leading-none tabular-nums text-emerald-400"><CountUp value={Math.round(r.wpm)} /></p>
+          </div>
+          <div>
+            <p className="text-sm text-zinc-500">acc</p>
+            <p className="font-mono text-7xl font-medium leading-none tabular-nums text-emerald-400">{r.accuracy == null ? '–' : <><CountUp value={Math.round(r.accuracy)} />%</>}</p>
+          </div>
+        </div>
+        <Sparkline series={r.wpmHistory} raw={r.rawHistory} />
       </div>
+      {isBest && <p className="mt-3 text-sm text-emerald-400">New personal best — previous was {Math.round(best)}.</p>}
+
+      <dl className="mt-10 grid grid-cols-2 gap-x-8 gap-y-6 sm:grid-cols-3 md:grid-cols-6">
+        <Stat label="raw" value={Math.round(r.rawWpm)} />
+        <Stat label="consistency" value={r.consistency == null ? null : Math.round(r.consistency)} unit="%" />
+        <Stat label="rhythm" value={r.keyConsistency == null ? null : Math.round(r.keyConsistency)} unit="%" />
+        <Stat label="characters" value={`${r.chars.correctWord}/${r.chars.incorrect}/${r.chars.extra}/${r.chars.missed}`} hint="correct / wrong / extra / missed" />
+        <Stat label="corrections" value={r.backspaces} />
+        <Stat label="time" value={Math.round(r.durationMs / 100) / 10} unit="s" decimals={1} />
+      </dl>
 
       {lessonCheck && (
-        <Card className={lessonCheck.passed ? '!border-emerald-500/40' : '!border-amber-500/30'}>
-          <h2 className="text-lg font-semibold text-white">{lessonCheck.passed ? 'Lesson passed' : 'Not quite yet – here is what to improve'}</h2>
-          <ul className="stagger mt-3 space-y-1.5 text-sm">
+        <div className="mt-10">
+          <SectionTitle>{lessonCheck.passed ? 'Lesson passed' : 'Not passed yet'}</SectionTitle>
+          <ul className="space-y-1.5 text-sm">
             {lessonCheck.checks.map((c) => (
-              <li key={c.id} className="flex items-center justify-between gap-3">
-                <span className="flex items-center gap-2 text-zinc-300">
-                  <span className={cx('flex h-5 w-5 items-center justify-center rounded-full text-xs', c.ok ? 'bg-emerald-500/20 text-emerald-300' : 'bg-amber-500/20 text-amber-300')}>{c.ok ? '✓' : '!'}</span>
-                  {c.label}
-                </span>
-                <span className={cx('tabular-nums', c.ok ? 'text-emerald-300' : 'text-amber-300')}>
-                  {c.actual == null ? '—' : typeof c.actual === 'number' ? Math.round(c.actual * 10) / 10 : c.actual}{c.unit} <span className="text-zinc-500">/ target {c.target}{c.unit}</span>
+              <li key={c.id} className="flex items-baseline justify-between gap-3">
+                <span className="text-zinc-300"><span className={cx('mr-2 font-mono', c.ok ? 'text-emerald-400' : 'text-[#e0605b]')}>{c.ok ? '✓' : '×'}</span>{c.label}</span>
+                <span className="font-mono tabular-nums text-zinc-200">
+                  {c.actual == null ? '–' : typeof c.actual === 'number' ? Math.round(c.actual * 10) / 10 : c.actual}{c.unit}
+                  <span className="text-zinc-600"> / {c.target}{c.unit}</span>
                 </span>
               </li>
             ))}
           </ul>
-        </Card>
-      )}
-
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Stat i={1} label="Raw speed" value={Math.round(r.rawWpm)} unit=" WPM" hint="every key, errors included" />
-        <Stat i={2} label="Accuracy" value={r.accuracy == null ? null : Math.round(r.accuracy * 10) / 10} unit="%" tone={tone(r.accuracy, 97, 92)} />
-        <Stat i={3} label="Consistency" value={r.consistency == null ? null : Math.round(r.consistency)} unit="/100" hint="even pace per second" />
-        <Stat i={4} label="Rhythm" value={r.keyConsistency == null ? null : Math.round(r.keyConsistency)} unit="/100" hint="even key intervals" />
-      </div>
-
-      <Card i={5}>
-        <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-zinc-400">
-          <span>Speed over time</span>
-          <span><span className="text-emerald-400">━</span> WPM <span className="ml-2 text-zinc-500">━</span> raw</span>
         </div>
-        <Sparkline series={r.wpmHistory} raw={r.rawHistory} />
-        <dl className="mt-3 grid grid-cols-2 gap-x-6 gap-y-1 text-sm sm:grid-cols-5">
-          <div><dt className="text-zinc-500">Correct</dt><dd className="tabular-nums text-zinc-200">{r.correctKeys}</dd></div>
-          <div><dt className="text-zinc-500">Incorrect</dt><dd className="tabular-nums text-zinc-200">{r.incorrectKeys}</dd></div>
-          <div><dt className="text-zinc-500">Corrections</dt><dd className="tabular-nums text-zinc-200">{r.backspaces}</dd></div>
-          <div><dt className="text-zinc-500">Words</dt><dd className="tabular-nums text-zinc-200">{r.wordsCorrect}/{r.wordsCompleted}</dd></div>
-          <div><dt className="text-zinc-500">Time</dt><dd className="tabular-nums text-zinc-200">{(r.durationMs / 1000).toFixed(1)}s</dd></div>
-        </dl>
-      </Card>
+      )}
 
       {(mistakeCodes?.length > 0 || peekCodes?.length > 0) && (
-        <div className="grid gap-3 sm:grid-cols-2">
+        <div className="mt-10 grid gap-8 sm:grid-cols-2">
           {mistakeCodes?.length > 0 && (
-            <Card i={6}>
-              <h3 className="font-medium text-white">Keys that tripped you up</h3>
-              <p className="mt-3 flex flex-wrap gap-2">
-                {mistakeCodes.map((m) => <Badge key={m.code} tone="warn">{codeLabel(layout, m.code)} · {m.err}/{m.n}</Badge>)}
-              </p>
-            </Card>
+            <div>
+              <SectionTitle>Missed keys</SectionTitle>
+              <p className="flex flex-wrap gap-2">{mistakeCodes.map((m) => <span key={m.code} className="rounded-md bg-zinc-900 px-2.5 py-1 font-mono text-sm text-zinc-200">{codeLabel(layout, m.code)} <span className="text-zinc-500">{m.err}/{m.n}</span></span>)}</p>
+            </div>
           )}
           {peekCodes?.length > 0 && (
-            <Card i={7}>
-              <h3 className="font-medium text-white">Keys you looked down for</h3>
-              <p className="mt-1 text-xs text-zinc-500">What you were typing each time your eyes dropped to the keyboard.</p>
-              <p className="mt-3 flex flex-wrap gap-2">
-                {peekCodes.map((m) => <Badge key={m.code} tone="info">{codeLabel(layout, m.code)} · {m.n}×</Badge>)}
-              </p>
-            </Card>
+            <div>
+              <SectionTitle aside="what you were typing when your eyes dropped">Keys you looked down for</SectionTitle>
+              <p className="flex flex-wrap gap-2">{peekCodes.map((m) => <span key={m.code} className="rounded-md bg-zinc-900 px-2.5 py-1 font-mono text-sm text-zinc-200">{codeLabel(layout, m.code)} <span className="text-zinc-500">{m.n}×</span></span>)}</p>
+            </div>
           )}
         </div>
       )}
 
-      <EyeSummary tracking={r.tracking} history={history} />
+      <div className="mt-10"><EyeSummary tracking={r.tracking} history={history} /></div>
 
-      {saveStatus && <p className="text-center text-sm text-zinc-500">{saveStatus}</p>}
-      <div className="flex flex-wrap justify-center gap-3">{actions}</div>
+      <div className="mt-10 flex flex-wrap items-center gap-3">
+        {actions}
+        {saveStatus && <span className="ml-auto text-xs text-zinc-600">{saveStatus}</span>}
+      </div>
     </div>
   )
 }

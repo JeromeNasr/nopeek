@@ -60,3 +60,20 @@ Peek recall/false-peek rates on real people; calibration quality thresholds (dâ€
 ## 13. Second pass (TouchType)
 Renamed to **TouchType** (local data migrates from the old storage prefix). New design system (self-hosted Geist + JetBrains Mono, accent themes, staggered/entrance animations, count-up results, skeleton loading, reduced-motion support), sticky nav with hover prefetch, focus mode, pace ghost, key sounds + metronome (Web Audio, synthesised), smart keyboard hints, caret styles, text size, daily plan, peek-trigger analysis. Tracking v3: see `docs/EYE_TRACKING.md`.
 Tests: 117. Simulation after v3 (25 simulated setups): 21 accepted, 0.026 false peeks/min, 100 % recall of 1-s peeks â€” still a simulation, not webcam validation. The Supabase project was paused when checked, so the schema and migration remain unverified against production.
+
+## 14. Third pass: Monkeytype engine, smoothness, redesign, tracking v4
+**Licence**: now GPL-3.0-only (Monkeytype code included, see `NOTICE.md`).
+**Typing**: statistics by Monkeytype's unmodified `events/stats.ts`; input rules ported; rendering is imperative (no UI-framework work per keystroke).
+**Measured (headless Chromium, 4x CPU throttle, ~280 keys at 35 ms)**
+
+| | Before | After |
+|---|---|---|
+| keystroke handler, mean / p95 | 3.03 / 4.4 ms | 0.97 / 1.8 ms |
+| with camera tracking: key to 2nd frame, p95 / max | 111 / 548 ms | 37 / 55 ms |
+| with camera tracking: long tasks during the run | 24 | 0 |
+| tracking rate (CPU) | 13 fps, main thread | 20 fps, worker |
+| entry JS | 472 kB (139 gz) | 335 kB (113 gz) |
+
+Key-to-frame latency without the camera is unchanged (about 24 ms, bound by the display refresh in this environment).
+**Design**: flat, single accent, three themes (ink, midnight, paper); the home page is the typing test.
+**Tests**: 127. Simulation: 21/25 setups accepted, 0.026 false peeks/min, 100 % recall of 1-s peeks; plus a two-style (head-tilt and eyes-only) user where both styles are detected. Still simulation, not webcam validation.

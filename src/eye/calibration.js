@@ -114,20 +114,98 @@ function ldaWeights(axes, s, d, sStats, dStats) {
   return w
 }
 
-/** Project a feature vector onto the screen→keyboard axis: 0 = screen, 1 = keyboard. */
-export function projectScore(profile, f, offset = null) {
+function projectAxes(axes, screen, f, offset) {
   let num = 0
   let den = 0
   const z = {}
-  for (const a of profile.axes) {
+  for (const a of axes) {
     const x = f[a.feature]
     if (x == null || !Number.isFinite(x)) continue
-    const base = profile.screen[a.feature].median + (offset?.[a.feature] ?? 0)
+    const base = screen[a.feature].median + (offset?.[a.feature] ?? 0)
     z[a.feature] = (x - base) / a.sep
     num += (a.w * (x - base)) / a.scale
     den += (a.w * a.sep) / a.scale
   }
   return { t: den > 1e-9 ? num / den : null, z }
+}
+
+/**
+ * Each signal's own position between screen (0) and keyboard (1), taken from whichever
+ * prototype separates that signal best. Used for diagnostics and the nodding rule.
+ */
+export function signalZ(profile, f, offset = null) {
+  const best = {}
+  for (const axes of [profile.axes, ...(profile.protos ?? []).map((p) => p.axes)]) {
+    for (const a of axes) if (!best[a.feature] || a.snr > best[a.feature].snr) best[a.feature] = a
+  }
+  const z = {}
+  for (const [k, a] of Object.entries(best)) {
+    const x = f[k]
+    if (x == null || !Number.isFinite(x)) continue
+    z[k] = (x - profile.screen[k].median - (offset?.[k] ?? 0)) / a.sep
+  }
+  return z
+}
+
+/**
+ * Project a feature vector onto the screen→keyboard axis: 0 = screen, 1 = keyboard.
+ * People look at the keyboard in more than one way (tilting the head, or dropping only
+ * the eyes). Each distinct way captured during calibration is its own prototype; the
+ * score is the best match among them, so one style is not diluted by another.
+ */
+export function projectScore(profile, f, offset = null) {
+  let best = projectAxes(profile.axes, profile.screen, f, offset)
+  for (const proto of profile.protos ?? []) {
+    const r = projectAxes(proto.axes, profile.screen, f, offset)
+    if (r.t != null && (best.t == null || r.t > best.t)) best = r
+  }
+  return best
+}
+
+const quantile = (sorted, q) => sorted[Math.min(sorted.length - 1, Math.max(0, Math.floor(q * (sorted.length - 1))))]
+
+/** Do two keyboard captures look like different ways of peeking? */
+function distinctStyles(a, b) {
+  for (const k of DISCRIMINATIVE) {
+    if (!a.down[k] || !b.down[k]) continue
+    const gap = Math.abs(a.down[k].median - b.down[k].median)
+    const scale = Math.sqrt((a.down[k].sd ** 2 + b.down[k].sd ** 2) / 2)
+    if (gap / scale > 2.5) return true
+  }
+  return false
+}
+
+/** Pooled model plus one prototype per distinct keyboard-look style. */
+function fitFull(s, d, dSegs = []) {
+  const model = fit(s, d)
+  const protos = []
+  if (model.axes.length && dSegs.length >= 2) {
+    const fits = dSegs.filter((seg) => seg.length >= 15).map((seg) => fit(s, seg)).filter((m) => m.axes.length)
+    const kept = []
+    for (const m of fits) if (!kept.some((k) => !distinctStyles(k, m))) kept.push(m)
+    if (kept.length >= 2) for (const m of kept.slice(0, 4)) protos.push({ axes: m.axes, down: m.down })
+  }
+  return { ...model, protos }
+}
+
+/**
+ * Personal decision thresholds: placed between this user's own screen scores and
+ * keyboard scores instead of using one fixed number for everybody.
+ */
+function chooseThresholds(ts, td) {
+  if (ts.length < 20 || td.length < 20) return { enter: T_ENTER, exit: T_EXIT }
+  const a = [...ts].sort((x, y) => x - y)
+  const b = [...td].sort((x, y) => x - y)
+  const hiScreen = quantile(a, 0.99)
+  const loDown = quantile(b, 0.1)
+  // Only personalise when the two clusters are clearly apart; otherwise keep the
+  // conservative defaults so a marginal calibration is not flattered by its own thresholds.
+  if (loDown - hiScreen < 0.3) return { enter: T_ENTER, exit: T_EXIT }
+  let enter = (hiScreen + loDown) / 2
+  enter = Math.max(enter, hiScreen + 0.15)
+  enter = Math.min(0.82, Math.max(0.58, enter))
+  const exit = Math.min(0.6, Math.max(0.35, enter - 0.22))
+  return { enter: Math.round(enter * 100) / 100, exit: Math.round(exit * 100) / 100 }
 }
 
 function fit(s, d) {
@@ -150,10 +228,10 @@ function fit(s, d) {
   return { screen: screenStats, down: downStats, axes }
 }
 
-function rates(model, s, d) {
+function rates(model, s, d, th = { enter: T_ENTER, exit: T_EXIT }) {
   const ts = s.map((f) => projectScore(model, f).t).filter((x) => x != null)
   const td = d.map((f) => projectScore(model, f).t).filter((x) => x != null)
-  return { ts, td, fp: ts.filter((x) => x > T_ENTER).length, fn: td.filter((x) => x < T_EXIT).length }
+  return { ts, td, fp: ts.filter((x) => x > th.enter).length, fn: td.filter((x) => x < th.exit).length }
 }
 
 /**
@@ -184,7 +262,8 @@ export function buildProfile({ screen, down, brightness = null, screenSegments =
     }
   }
 
-  const model = fit(s, d)
+  const dSegAll = (downSegments ?? []).map(cleanSamples)
+  const model = fitFull(s, d, dSegAll)
   const profile = { ...base, ...model }
   if (model.axes.length === 0) {
     return {
@@ -206,7 +285,10 @@ export function buildProfile({ screen, down, brightness = null, screenSegments =
   }
 
   // In-sample separation of the projected scores
-  const ins = rates(profile, s, d)
+  const first = rates(profile, s, d)
+  const thresholds = chooseThresholds(first.ts, first.td)
+  profile.thresholds = thresholds
+  const ins = rates(profile, s, d, thresholds)
   const mean = (a) => a.reduce((x, y) => x + y, 0) / a.length
   const sd = (a) => {
     const m = mean(a)
@@ -231,20 +313,34 @@ export function buildProfile({ screen, down, brightness = null, screenSegments =
     for (let i = 0; i < sSeg.length; i++) {
       const train = sSeg.filter((_, j) => j !== i).flat()
       if (train.length < MIN_SAMPLES / 2) continue
-      const m = fit(train, d)
+      const m = fitFull(train, d, dSegAll)
       if (!m.axes.length) { fp += sSeg[i].length; nS += sSeg[i].length; continue }
-      const r = rates(m, sSeg[i], [])
+      const r = rates(m, sSeg[i], [], thresholds)
       fp += r.fp
       nS += r.ts.length
     }
-    for (let i = 0; i < dSeg.length; i++) {
-      const train = dSeg.filter((_, j) => j !== i).flat()
-      if (train.length < MIN_SAMPLES / 2) continue
-      const m = fit(s, train)
-      if (!m.axes.length) { fn += dSeg[i].length; nD += dSeg[i].length; continue }
-      const r = rates(m, [], dSeg[i])
-      fn += r.fn
-      nD += r.td.length
+    if (model.protos.length >= 2) {
+      // Distinct peeking styles were each captured once, so holding a whole capture out
+      // would test a style the model never saw. Hold out alternating halves of every capture instead.
+      for (const half of [0, 1]) {
+        const trainSegs = dSeg.map((seg) => seg.filter((_, k) => (k >> 2) % 2 !== half))
+        const testSet = dSeg.flatMap((seg) => seg.filter((_, k) => (k >> 2) % 2 === half))
+        const m = fitFull(s, trainSegs.flat(), trainSegs)
+        if (!m.axes.length) { fn += testSet.length; nD += testSet.length; continue }
+        const r = rates(m, [], testSet, thresholds)
+        fn += r.fn
+        nD += r.td.length
+      }
+    } else {
+      for (let i = 0; i < dSeg.length; i++) {
+        const train = dSeg.filter((_, j) => j !== i).flat()
+        if (train.length < MIN_SAMPLES / 2) continue
+        const m = fit(s, train)
+        if (!m.axes.length) { fn += dSeg[i].length; nD += dSeg[i].length; continue }
+        const r = rates(m, [], dSeg[i], thresholds)
+        fn += r.fn
+        nD += r.td.length
+      }
     }
     if (nS > 0 && nD > 0) {
       validated = true
@@ -280,7 +376,9 @@ export function buildProfile({ screen, down, brightness = null, screenSegments =
       falseNegative: r3(falseNegative),
       cvFalsePositive: r3(cvFalsePositive),
       cvFalseNegative: r3(cvFalseNegative),
-      signals: model.axes.map((a) => a.feature),
+      signals: [...new Set([...model.axes, ...model.protos.flatMap((p) => p.axes)].map((a) => a.feature))],
+      styles: Math.max(1, model.protos.length),
+      thresholds,
       issues: qIssues,
     },
   }

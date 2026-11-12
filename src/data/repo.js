@@ -8,7 +8,7 @@
 //  * Sessions created while signed out stay local until the user chooses to add
 //    them to their account.
 
-import { supabase } from '../supabaseClient'
+import { getSupabase, hasStoredSession, isCloudConfigured } from '../supabaseClient'
 import { DEFAULT_KEYBOARD_PROFILE, normalizeProfile } from '../training/keyboard.js'
 import { readJSON, writeJSON } from './localStore.js'
 
@@ -113,13 +113,15 @@ export function fromRow(row) {
 
 // ---- save / load ----------------------------------------------------------------
 
-async function currentUser() {
-  if (!supabase) return null
+/** The signed-in user and client, or nulls. Never downloads Supabase for a signed-out visitor. */
+async function cloudContext() {
+  if (!isCloudConfigured || !hasStoredSession()) return { user: null, supabase: null }
+  const supabase = await getSupabase()
   const { data } = await supabase.auth.getUser().catch(() => ({ data: null }))
-  return data?.user ?? null
+  return { user: data?.user ?? null, supabase }
 }
 
-async function insertRow(rec, userId) {
+async function insertRow(supabase, rec, userId) {
   const row = toRow(rec, userId)
   let { error } = await supabase.from('sessions').insert(row)
   if (error && isMissingColumn(error)) {
@@ -136,14 +138,14 @@ async function insertRow(rec, userId) {
  * @returns {{ record, cloud: 'saved'|'local-only'|'signed-out'|'error', error?: string }}
  */
 export async function saveSession(rec) {
-  const user = await currentUser()
+  const { user, supabase } = await cloudContext()
   const record = { ...rec, user_id: user?.id ?? null, synced: false }
   const list = readLocalSessions()
   list.push(record)
   writeLocalSessions(list)
-  if (!supabase) return { record, cloud: 'local-only' }
+  if (!isCloudConfigured) return { record, cloud: 'local-only' }
   if (!user) return { record, cloud: 'signed-out' }
-  const error = await insertRow(record, user.id)
+  const error = await insertRow(supabase, record, user.id)
   if (error) return { record, cloud: 'error', error: error.message }
   markSynced([record.id])
   return { record: { ...record, synced: true }, cloud: 'saved' }
@@ -156,7 +158,7 @@ function markSynced(ids) {
 
 /** Loads cloud + local sessions for the current visitor, oldest first. */
 export async function loadSessions() {
-  const user = await currentUser()
+  const { user, supabase } = await cloudContext()
   const local = readLocalSessions()
   let cloud = []
   let cloudError = null
@@ -180,14 +182,14 @@ export async function loadSessions() {
 
 /** Upload sessions that were recorded while signed out (explicit user action). */
 export async function claimLocalSessions() {
-  const user = await currentUser()
+  const { user, supabase } = await cloudContext()
   if (!user) return { uploaded: 0, failed: 0 }
   const pending = readLocalSessions().filter((s) => s.user_id == null || (s.user_id === user.id && !s.synced))
   let uploaded = 0
   let failed = 0
   const done = []
   for (const s of pending) {
-    const err = await insertRow(s, user.id)
+    const err = await insertRow(supabase, s, user.id)
     if (err) failed++
     else {
       uploaded++
@@ -207,18 +209,18 @@ export function readKeyboardProfile() {
 export async function saveKeyboardProfile(profile) {
   const p = normalizeProfile(profile)
   writeJSON(KEYBOARD_KEY, p)
-  const user = await currentUser()
+  const { user, supabase } = await cloudContext()
   if (user) {
     const { error } = await supabase.from('user_profiles').upsert({ user_id: user.id, keyboard: p, updated_at: new Date().toISOString() })
     if (error) return { profile: p, cloud: 'error' }
     return { profile: p, cloud: 'saved' }
   }
-  return { profile: p, cloud: user === null && supabase ? 'signed-out' : 'local-only' }
+  return { profile: p, cloud: isCloudConfigured ? 'signed-out' : 'local-only' }
 }
 
 /** Pull the cloud keyboard profile if one exists (cloud wins on a new device). */
 export async function pullKeyboardProfile() {
-  const user = await currentUser()
+  const { user, supabase } = await cloudContext()
   if (!user) return null
   const { data, error } = await supabase.from('user_profiles').select('keyboard').eq('user_id', user.id).maybeSingle()
   if (error || !data?.keyboard) return null

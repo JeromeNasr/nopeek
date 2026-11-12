@@ -30,7 +30,7 @@ function classifyCameraError(err) {
 }
 
 export class FaceTracker {
-  constructor({ targetFps = 20 } = {}) {
+  constructor({ targetFps = 24 } = {}) {
     this.targetFps = targetFps
     this.minGapMs = 1000 / targetFps
     this.video = null
@@ -39,7 +39,7 @@ export class FaceTracker {
     this.running = false
     this.listeners = new Set()
     this.errorListeners = new Set()
-    this.stats = { fps: 0, inferenceMs: 0, frames: 0, delegate: null }
+    this.stats = { fps: 0, inferenceMs: 0, frames: 0, delegate: null, thread: 'main' }
     this._raf = null
     this._lastRun = 0
     this._lastVideoTime = -1
@@ -100,15 +100,71 @@ export class FaceTracker {
     }
 
     try {
-      await this._loadModel()
-    } catch (err) {
-      this.stop()
-      throw { code: 'model-failed', message: CAMERA_ERRORS['model-failed'], detail: err }
+      await this._startWorker()
+    } catch {
+      // Workers unsupported or blocked: run on the main thread instead (slower for typing, still works)
+      this._stopWorker()
+      try {
+        await this._loadModel()
+      } catch (err) {
+        this.stop()
+        throw { code: 'model-failed', message: CAMERA_ERRORS['model-failed'], detail: err }
+      }
     }
 
     this.running = true
     document.addEventListener('visibilitychange', this._onVisibility)
     this._schedule()
+  }
+
+  _startWorker() {
+    return new Promise((resolve, reject) => {
+      if (typeof Worker === 'undefined' || typeof createImageBitmap === 'undefined' || typeof OffscreenCanvas === 'undefined') {
+        reject(new Error('no worker support'))
+        return
+      }
+      const w = new Worker(new URL('./worker.js', import.meta.url), { type: 'module' })
+      this.worker = w
+      this._busy = false
+      const timer = setTimeout(() => reject(new Error('worker init timeout')), 30000)
+      w.onerror = (e) => {
+        clearTimeout(timer)
+        reject(e)
+      }
+      w.onmessage = (e) => {
+        const m = e.data
+        if (m.type === 'ready') {
+          clearTimeout(timer)
+          this.stats.delegate = m.delegate
+          this.stats.thread = 'worker'
+          resolve()
+        } else if (m.type === 'error') {
+          clearTimeout(timer)
+          reject(new Error(m.message))
+        } else if (m.type === 'result') {
+          this._busy = false
+          if (m.skipped) return
+          const now = performance.now()
+          this.stats.inferenceMs = m.ms
+          this.stats.delegate = m.delegate
+          this.stats.frames++
+          this._fpsWindow.push(now)
+          while (this._fpsWindow.length && now - this._fpsWindow[0] > 2000) this._fpsWindow.shift()
+          this.stats.fps = this._fpsWindow.length / 2
+          this.minGapMs = m.ms > 40 ? Math.max(1000 / this.targetFps, m.ms * 1.3) : 1000 / this.targetFps
+          this._brightness = m.brightness
+          for (const cb of this.listeners) cb({ t: m.t, features: m.features, brightness: m.brightness })
+        }
+      }
+      const origin = self.location.origin
+      w.postMessage({ type: 'init', wasmPath: origin + WASM_PATH, model: origin + MODEL_PATH })
+    })
+  }
+
+  _stopWorker() {
+    this.worker?.terminate()
+    this.worker = null
+    this._busy = false
   }
 
   /** Swap to the CPU (XNNPACK) delegate when "GPU" turns out to be software-emulated and slow. */
@@ -211,6 +267,19 @@ export class FaceTracker {
     if (!this.running || document.hidden) return
     const now = performance.now()
     const v = this.video
+    if (this.worker) {
+      // one frame in flight at a time: if the worker is busy we simply skip this frame
+      if (!this._busy && now - this._lastRun >= this.minGapMs && v.readyState >= 2 && v.currentTime !== this._lastVideoTime) {
+        this._lastVideoTime = v.currentTime
+        this._lastRun = now
+        this._busy = true
+        createImageBitmap(v)
+          .then((bitmap) => this.worker?.postMessage({ type: 'frame', bitmap, t: now }, [bitmap]))
+          .catch(() => { this._busy = false })
+      }
+      this._schedule()
+      return
+    }
     if (!this.landmarker) {
       this._schedule()
       return
@@ -239,6 +308,7 @@ export class FaceTracker {
   stop() {
     this.running = false
     this._cancel()
+    this._stopWorker()
     document.removeEventListener('visibilitychange', this._onVisibility)
     if (this.stream) {
       for (const t of this.stream.getTracks()) t.stop()

@@ -49,7 +49,7 @@ export default function Learn() {
                 <span className="text-xs text-zinc-500">{done}/{lessons.length}</span>
               </div>
               <p className="mb-3 text-sm text-zinc-500">{stage.blurb}</p>
-              <ul className="stagger grid gap-2 sm:grid-cols-2">
+              <ul className="grid gap-2 sm:grid-cols-2">
                 {lessons.map((l) => {
                   const p = progress.byLesson[l.id]
                   const isNext = progress.nextLessonId === l.id
@@ -57,8 +57,8 @@ export default function Learn() {
                     <li key={l.id}>
                       <Link
                         to={`/learn/${l.id}`}
-                        className={cx('card-hover flex h-full items-start justify-between gap-3 rounded-xl border p-4',
-                          isNext ? 'border-emerald-500/50 bg-emerald-500/[0.06]' : 'border-white/[0.07] bg-white/[0.02]', !p.unlocked && 'opacity-60')}
+                        className={cx('card-hover flex h-full items-start justify-between gap-3 rounded-lg border p-4',
+                          isNext ? 'border-emerald-500/50 bg-emerald-500/[0.06]' : 'border-zinc-800 bg-zinc-900', !p.unlocked && 'opacity-60')}
                       >
                         <div>
                           <p className="text-sm font-medium text-zinc-100"><span className="text-zinc-500">{l.id}</span> {l.title}</p>
@@ -127,18 +127,18 @@ function LessonInner({ id }) {
         <>
           <PageHeader title={`${lesson.id} · ${lesson.title}`} subtitle={lesson.summary} />
           <Card className="mb-6">
-            <h2 className="text-sm font-semibold uppercase tracking-wider text-zinc-500">How to do it</h2>
+            <h2 className="text-sm font-semibold  text-zinc-500">How to do it</h2>
             <ul className="mt-3 list-disc space-y-2 pl-5 text-zinc-300">{lesson.teach.map((t) => <li key={t}>{t}</li>)}</ul>
           </Card>
           {lesson.showKeyboard && (
             <Card className="mb-6">
-              <h2 className="mb-3 text-sm font-semibold uppercase tracking-wider text-zinc-500">Keys in this lesson</h2>
+              <h2 className="mb-3 text-sm font-semibold  text-zinc-500">Keys in this lesson</h2>
               <Keyboard profile={profile} highlight={lesson.keys} target={lesson.focus} />
               <p className="mt-3 text-xs text-zinc-500">Bright keys are practised here; the glowing ones are new. Colour and the L5…R5 badge show which finger owns each key.</p>
             </Card>
           )}
           <Card className="mb-6">
-            <h2 className="text-sm font-semibold uppercase tracking-wider text-zinc-500">To pass</h2>
+            <h2 className="text-sm font-semibold  text-zinc-500">To pass</h2>
             <ul className="mt-2 text-sm text-zinc-300">
               <li>Accuracy at least <strong>{lesson.pass.minAccuracy}%</strong></li>
               <li>Speed at least <strong>{lesson.pass.minWpm} WPM</strong></li>
@@ -212,7 +212,7 @@ export function FingerGuide() {
       <ul className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
         {FINGER_ORDER.filter((f) => byFinger[f].length > 1).map((f) => (
           <li key={f}>
-            <Link to={`/practice?kind=finger&codes=${byFinger[f].join(',')}&label=${encodeURIComponent(FINGERS[f].label)}`} className="card card-hover block p-3" style={{ animation: 'none' }}>
+            <Link to={`/practice?kind=finger&codes=${byFinger[f].join(',')}&label=${encodeURIComponent(FINGERS[f].label)}`} className="card card-hover block p-3">
               <p className="text-sm font-medium text-white">{FINGERS[f].label}</p>
               <p className="mt-1 text-xs text-zinc-500">{byFinger[f].length} keys</p>
             </Link>

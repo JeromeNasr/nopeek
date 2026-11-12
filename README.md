@@ -1,7 +1,7 @@
 # TouchType
 
 A touch-typing trainer: structured lessons, personalised drills built from your own mistakes and rhythm,
-a Monkeytype-style test, and optional **on-device** eye tracking that measures how often you look at the keyboard.
+a typing test whose statistics are computed by Monkeytype's own code, and optional **on-device** eye tracking that measures how often you look at the keyboard.
 
 ## Run
 
@@ -21,4 +21,7 @@ it is applied (falls back to legacy columns) but new analytics need it. See `doc
 ## Docs
 * `docs/REPORT.md` – audit, root causes, architecture, measurements, limitations, what needs physical-webcam validation
 * `docs/EYE_TRACKING.md` – pipeline, classifier, calibration, privacy
-* `NOTICE.md` – licensing (Monkeytype/GPL-3.0 analysis) and third-party notices
+* `NOTICE.md` – licence (GPL-3.0) and third-party notices, including the Monkeytype code in `src/vendor/monkeytype/`
+
+## Licence
+GPL-3.0-only. TouchType includes code from [Monkeytype](https://github.com/monkeytypegame/monkeytype) (GPL-3.0); see `NOTICE.md`.

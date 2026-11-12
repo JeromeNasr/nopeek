@@ -11,7 +11,10 @@ import { SessionTally } from './tally.js'
 import { FaceTracker } from './tracker.js'
 
 const SETTINGS_KEY = 'eye.settings'
-const PROFILE_KEY = 'eye.profile.v3' // calibration numbers only; never uploaded
+const PROFILE_KEY = 'eye.profile.v4'
+const SAMPLES_KEY = 'eye.samples.v4' // feature numbers only (no images); lets the model be refined later
+const KEEP = ['pitch', 'yaw', 'roll', 'gazeV', 'gazeH', 'gazeLid', 'lookDown', 'blink', 'openness', 'faceWidth', 'marginFrac', 'eyeDisagreement']
+const compact = (seg) => seg.slice(0, 90).map((f) => Object.fromEntries(KEEP.filter((k) => f[k] != null).map((k) => [k, Math.round(f[k] * 1e4) / 1e4]))) // calibration numbers only; never uploaded
 
 const DEFAULT_SETTINGS = { enabled: false, sensitivity: 'balanced', showPreview: true, hints: true }
 
@@ -89,6 +92,13 @@ class EyeSession {
 
   /** Build and store a profile from labelled capture arrays. Returns the (possibly rejected) profile. */
   finishCalibration(data) {
+    const samples = { screenSegments: (data.screenSegments ?? []).map(compact), downSegments: (data.downSegments ?? []).map(compact), brightness: data.brightness ?? null }
+    writeJSON(SAMPLES_KEY, samples)
+    return this._refit(samples)
+  }
+
+  _refit(samples) {
+    const data = { screen: samples.screenSegments.flat(), down: samples.downSegments.flat(), screenSegments: samples.screenSegments, downSegments: samples.downSegments, brightness: samples.brightness }
     const profile = buildProfile(data)
     this.profile = profile
     if (profile.ok) writeJSON(PROFILE_KEY, profile)
@@ -96,6 +106,52 @@ class EyeSession {
     this._rebuildGaze()
     this._emit()
     return profile
+  }
+
+  /**
+   * Teach the tracker from a correction: capture a short burst while the user really is
+   * looking at the screen / keyboard, add it to the stored calibration data and refit.
+   * @param {'screen'|'down'} label
+   */
+  teach(label, { delayMs = 0, ms = 1800 } = {}) {
+    const stored = readJSON(SAMPLES_KEY)
+    if (!stored || this.runtime.phase !== 'running') return Promise.resolve(null)
+    return new Promise((resolve) => {
+      setTimeout(() => {
+        this.beginCapture()
+        setTimeout(() => {
+          const { samples } = this.endCapture()
+          if (samples.length < 12) {
+            resolve(null)
+            return
+          }
+          const key = label === 'down' ? 'downSegments' : 'screenSegments'
+          const next = { ...stored, [key]: [...stored[key], compact(samples)].slice(-12) }
+          const previous = this.profile
+          const profile = this._refit(next)
+          if (profile.ok) writeJSON(SAMPLES_KEY, next)
+          else if (previous?.ok) {
+            // a correction must never destroy a working calibration
+            this.profile = previous
+            writeJSON(PROFILE_KEY, previous)
+            this._rebuildGaze()
+            this._emit()
+          }
+          resolve(profile)
+        }, ms)
+      }, delayMs)
+    })
+  }
+
+  /** Numbers only (no images or landmarks): safe to share when asking for help tuning. */
+  diagnostics() {
+    const p = this.profile
+    return {
+      app: 'touchtype', at: new Date().toISOString(),
+      runtime: this.runtime, settings: this.settings, live: this.live,
+      profile: p && { version: p.version, ok: p.ok, quality: p.quality, thresholds: p.thresholds, counts: p.counts, brightness: p.brightness,
+        axes: p.axes, protos: p.protos?.map((x) => x.axes), screen: p.screen, down: p.down },
+    }
   }
 
   /** Capture ~1.5 s of screen-looking and re-centre the baseline (after a posture change). */
@@ -114,6 +170,7 @@ class EyeSession {
   clearCalibration() {
     this.profile = null
     removeKey(PROFILE_KEY)
+    removeKey(SAMPLES_KEY)
     this._rebuildGaze()
     this._emit()
   }
@@ -264,7 +321,7 @@ class EyeSession {
       if (changed || t - this._lastPush > PUSH_INTERVAL_MS) {
         this.live = {
           state: out.state, label: out.label, score: out.score, confidence: out.confidence,
-          reason: out.reason ?? null, candidate: out.candidate, since: out.since,
+          reason: out.reason ?? null, candidate: out.candidate, since: out.since, z: out.z ?? null,
           drift: this.gaze.driftRatio(),
         }
         dirty = true
@@ -273,7 +330,7 @@ class EyeSession {
 
     if (dirty || t - this._lastPush > 1000) {
       this._lastPush = t
-      this.runtime = { ...this.runtime, fps: tracker.stats.fps, inferenceMs: tracker.stats.inferenceMs, delegate: tracker.stats.delegate }
+      this.runtime = { ...this.runtime, fps: tracker.stats.fps, inferenceMs: tracker.stats.inferenceMs, delegate: tracker.stats.delegate, thread: tracker.stats.thread }
       this._emit()
     }
   }

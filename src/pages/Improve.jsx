@@ -61,10 +61,10 @@ export default function Improve() {
   if (loading) return <div className="mx-auto max-w-4xl px-6 py-10"><Spinner /></div>
   return (
     <div className="mx-auto max-w-4xl px-6 py-10">
-      <PageHeader title="Improve" subtitle="Personalised recommendations, ranked by how strongly your data supports them, and goals to track real progress." />
+      <PageHeader title="Coach" subtitle="What to work on next, ranked by how strongly your own data supports it." />
 
       <h2 className="mb-3 text-lg font-semibold text-white">Recommended for you</h2>
-      <ol className="stagger space-y-3">
+      <ol className="space-y-3">
         {rec.recs.map((r, i) => {
           const link = actionLink(r.action)
           return (
@@ -72,7 +72,7 @@ export default function Improve() {
               <Card>
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="min-w-0 flex-1">
-                    <p className="text-xs font-medium uppercase tracking-wider text-zinc-500">#{i + 1}</p>
+                    <p className="text-xs font-medium  text-zinc-500">#{i + 1}</p>
                     <h3 className="font-medium text-white">{r.title}</h3>
                     <p className="mt-1 text-sm text-zinc-400">{r.reason}</p>
                     {r.evidence?.length > 0 && <ul className="mt-2 list-disc space-y-0.5 pl-5 text-sm text-zinc-500">{r.evidence.map((e) => <li key={e}>{e}</li>)}</ul>}
@@ -97,7 +97,7 @@ export default function Improve() {
 
       <Goals />
 
-      <details className="mt-10 rounded-xl border border-white/[0.08] p-4 text-sm text-zinc-400">
+      <details className="mt-10 rounded-lg border border-zinc-800 p-4 text-sm text-zinc-400">
         <summary className="cursor-pointer font-medium text-zinc-200">How recommendations are made</summary>
         <ul className="mt-3 list-disc space-y-1.5 pl-5">
           <li>A key is flagged only if its error rate – after allowing for small samples – is clearly above <em>your own</em> average, with at least 10 presses.</li>

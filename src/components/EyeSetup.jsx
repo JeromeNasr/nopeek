@@ -6,6 +6,7 @@ import { eye } from '../eye/session.js'
 import { describeLevel } from '../eye/calibration.js'
 import { SENSITIVITY } from '../eye/classifier.js'
 import { useEye } from '../eye/useEye.js'
+import { playTick } from '../lib/sound.js'
 
 const SCREEN_DOTS = [
   { x: 50, y: 50, label: 'center' }, { x: 8, y: 10, label: 'top-left' }, { x: 92, y: 10, label: 'top-right' },
@@ -139,49 +140,76 @@ function DownPhase({ onDone, onCancel }) {
     if (phase === 'capture' && pct * DOWN_MS >= DOWN_SETTLE_MS && !captured.current) { captured.current = true; eye.beginCapture() }
   }, [phase, pct])
   useEffect(() => () => { eye.endCapture() }, [])
-  const prompts = ['Look down at your keyboard exactly as you do when you peek.', 'Once more. Peek the way you sometimes do – for example, moving only your eyes this time.']
+  const prompts = ['Look down at your keyboard the way you usually do when you peek.', 'Now the other way you peek. If you tilted your head before, keep it still and drop only your eyes (or the reverse).']
   return (
     <Overlay title={`Look at your keyboard (${round + 1}/2)`} hint={prompts[round]} onCancel={onCancel}>
       <div className="absolute inset-x-0 top-1/3 mx-auto max-w-sm px-6 text-center">
         {phase === 'ready' && (<><p className="text-zinc-300">Press the button, then look down at your keys when the countdown ends. Keep looking until the bar fills.</p><Button className="mt-6" onClick={() => setPhase('countdown')} autoFocus>I&apos;m ready</Button></>)}
-        {phase === 'countdown' && <p className="text-7xl font-semibold tabular-nums text-emerald-300" aria-live="assertive">{count}</p>}
-        {phase === 'capture' && (<><p className="text-xl font-medium text-amber-200">Keep looking at your keyboard…</p><div className="mt-6"><ProgressBar value={pct * 100} tone="warn" label="Keyboard capture" /></div></>)}
+        {phase === 'countdown' && <p className="text-7xl font-semibold tabular-nums text-emerald-400" aria-live="assertive">{count}</p>}
+        {phase === 'capture' && (<><p className="text-xl font-medium text-[#d9a441]">Keep looking at your keyboard…</p><div className="mt-6"><ProgressBar value={pct * 100} tone="warn" label="Keyboard capture" /></div></>)}
       </div>
     </Overlay>
   )
 }
 
+const SIGNAL_LABEL = { pitch: 'head tilt', gazeV: 'iris position', gazeLid: 'iris between lids', lookDown: 'eye direction' }
+
 function LiveCheck() {
   const s = useEye()
-  const [recentering, setRecentering] = useState(null) // null | 'busy' | 'done' | 'failed'
+  const [busy, setBusy] = useState(null) // null | 'recenter' | 'screen' | 'down'
+  const [msg, setMsg] = useState(null)
   const d = describeEye(s)
-  const tone = { good: 'bg-emerald-500/15 text-emerald-300', bad: 'bg-amber-500/15 text-amber-200', info: 'bg-sky-500/15 text-sky-300', warn: 'bg-zinc-800 text-zinc-300', off: 'bg-zinc-800 text-zinc-400' }[d.tone]
+  const tone = { good: 'text-emerald-400', bad: 'text-[#d9a441]', info: 'text-zinc-200', warn: 'text-zinc-400', off: 'text-zinc-500' }[d.tone]
   const score = s.live.score
+  const th = s.profile?.thresholds
+  const running = s.runtime.phase === 'running'
+
+  async function teach(label) {
+    setBusy(label)
+    setMsg(label === 'down' ? 'Look at your keyboard now and hold…' : 'Keep looking at the screen…')
+    const profile = await eye.teach(label, { delayMs: label === 'down' ? 1200 : 200 })
+    playTick(true)
+    setBusy(null)
+    setMsg(!profile ? 'Could not see your face clearly – nothing was changed.' : profile.ok ? `Learned. Calibration is now ${profile.quality.level}.` : 'That made the two looks harder to tell apart, so it was not kept.')
+  }
+
   return (
     <Card>
-      <h3 className="font-medium text-white">Try it live</h3>
-      <p className="mt-1 text-sm text-zinc-400">Look at the screen, then at your keyboard, then tilt your head while still looking at the screen. The label should follow you after about half a second. If it doesn&apos;t, recalibrate – that is useful information about your setup.</p>
-      <p className={cx('mt-4 rounded-lg px-4 py-3 text-center text-lg font-semibold transition-colors', tone)} aria-live="polite">{d.text}</p>
-      <div className="mt-3">
-        <div className="relative h-2 overflow-hidden rounded-full bg-zinc-800">
-          <div className="absolute inset-y-0 bg-emerald-500/70" style={{ left: 0, width: `${Math.max(0, Math.min(1, ((score ?? 0) + 0.5) / 1.8)) * 100}%` }} />
+      <h3 className="font-medium text-white">Check it</h3>
+      <p className="mt-1 text-sm text-zinc-400">Look at the screen, then at your keys. The label should follow you in under half a second.</p>
+      <p className={cx('mt-5 font-mono text-2xl', tone)} aria-live="polite">{d.text.toLowerCase()}</p>
+      <div className="relative mt-3 h-1 bg-zinc-800">
+        <div className="absolute inset-y-0 left-0 bg-emerald-400" style={{ width: `${Math.max(0, Math.min(1, ((score ?? 0) + 0.3) / 1.6)) * 100}%` }} />
+        {th && <div className="absolute -inset-y-1 w-px bg-zinc-400" style={{ left: `${((th.enter + 0.3) / 1.6) * 100}%` }} title="your keyboard threshold" />}
+      </div>
+      <div className="mt-1 flex justify-between text-xs text-zinc-600"><span>screen</span><span>keyboard</span></div>
+
+      {s.live.z && (
+        <dl className="mt-5 grid gap-x-8 gap-y-1.5 text-xs sm:grid-cols-2">
+          {Object.entries(s.live.z).map(([k, v]) => (
+            <div key={k} className="flex items-center gap-3">
+              <dt className="w-28 text-zinc-500">{SIGNAL_LABEL[k] ?? k}</dt>
+              <dd className="relative h-1 flex-1 bg-zinc-800"><span className="absolute inset-y-0 left-0 bg-zinc-400" style={{ width: `${Math.max(0, Math.min(1, (v + 0.3) / 1.6)) * 100}%` }} /></dd>
+            </div>
+          ))}
+        </dl>
+      )}
+
+      <div className="mt-6 border-t border-zinc-800 pt-4">
+        <p className="text-sm text-zinc-200">Getting it wrong?</p>
+        <p className="mt-0.5 text-xs text-zinc-500">Teach it. Each press adds two seconds of your real posture to the calibration and refits it.</p>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <Button size="sm" variant="secondary" disabled={!running || busy} onClick={() => teach('screen')}>{busy === 'screen' ? 'learning…' : "I'm looking at the screen"}</Button>
+          <Button size="sm" variant="secondary" disabled={!running || busy} onClick={() => teach('down')}>{busy === 'down' ? 'look down…' : "I'll look at the keyboard"}</Button>
+          <Button size="sm" variant="ghost" disabled={!running || busy} onClick={async () => { setBusy('recenter'); setMsg('Keep looking at the screen…'); const ok = await eye.recenter(); setBusy(null); setMsg(ok ? 'Re-centred to your current posture.' : 'Could not see your face clearly.') }}>I moved – re-centre</Button>
         </div>
-        <div className="mt-1 flex justify-between text-xs text-zinc-600"><span>screen</span><span>keyboard</span></div>
+        {msg && <p role="status" className="mt-2 text-xs text-zinc-400">{msg}</p>}
       </div>
-      <div className="mt-4 flex flex-wrap items-center gap-3">
-        <Button size="sm" variant="secondary" disabled={recentering === 'busy' || s.runtime.phase !== 'running'}
-          onClick={async () => { setRecentering('busy'); setRecentering((await eye.recenter()) ? 'done' : 'failed') }}>
-          {recentering === 'busy' ? 'Look at the screen…' : 'Re-centre'}
-        </Button>
-        <span className="text-xs text-zinc-500">
-          {recentering === 'done' ? 'Re-centred to your current posture.' : recentering === 'failed' ? 'Could not see your face clearly – try again.' : 'Moved your chair or laptop? Look at the screen and re-centre in 1.5 s – no full recalibration needed.'}
-        </span>
+
+      <div className="mt-5 flex flex-wrap items-center justify-between gap-2 text-xs text-zinc-600">
+        <span>{s.runtime.fps ? `${s.runtime.fps.toFixed(0)} fps` : '–'} · {s.runtime.inferenceMs ? `${s.runtime.inferenceMs.toFixed(0)} ms/frame` : '–'} · {s.runtime.delegate ?? '–'} · {s.runtime.thread === 'worker' ? 'background thread' : 'main thread'}</span>
+        <button type="button" className="underline hover:text-zinc-400" onClick={async () => { try { await navigator.clipboard.writeText(JSON.stringify(eye.diagnostics(), null, 1)); setMsg('Diagnostics copied (numbers only, no images).') } catch { setMsg('Could not copy to the clipboard.') } }}>copy diagnostics</button>
       </div>
-      <dl className="mt-3 grid grid-cols-3 gap-2 text-xs text-zinc-500">
-        <div><dt>Camera</dt><dd className="text-zinc-300">{s.runtime.fps ? `${s.runtime.fps.toFixed(0)} fps` : '—'}</dd></div>
-        <div><dt>Processing</dt><dd className="text-zinc-300">{s.runtime.inferenceMs ? `${s.runtime.inferenceMs.toFixed(0)} ms/frame` : '—'}</dd></div>
-        <div><dt>Engine</dt><dd className="text-zinc-300">{s.runtime.delegate ?? '—'}</dd></div>
-      </dl>
     </Card>
   )
 }
@@ -252,10 +280,10 @@ export default function EyeSetup() {
         {step === 'idle' && (
           <div className="mt-4 space-y-4">
             {s.profile?.quality && (
-              <div className="rounded-lg border border-white/[0.08] p-4 text-sm">
+              <div className="rounded-lg border border-zinc-800 p-4 text-sm">
                 <p className="text-zinc-200">{describeLevel(level)}</p>
                 {s.profile.quality.dPrime != null && <p className="mt-1 text-xs text-zinc-500">Separation score {s.profile.quality.dPrime} · measured on {s.profile.counts.screen + s.profile.counts.down} calibration frames · {new Date(s.profile.createdAt).toLocaleDateString()}. {s.profile.quality.validated ? ' Quality was cross-validated on held-out capture steps.' : ''}</p>}
-                {s.profile.quality.issues?.map((i) => <p key={i.id} className={cx('mt-2 text-xs', i.severity === 'error' ? 'text-red-300' : i.severity === 'warn' ? 'text-amber-300' : 'text-zinc-400')}>• {i.message}</p>)}
+                {s.profile.quality.issues?.map((i) => <p key={i.id} className={cx('mt-2 text-xs', i.severity === 'error' ? 'text-[#e0605b]' : i.severity === 'warn' ? 'text-[#d9a441]' : 'text-zinc-400')}>• {i.message}</p>)}
               </div>
             )}
             {s.live.drift > 0.5 && s.runtime.phase === 'running' && <Notice tone="warn">Your sitting position seems to have changed since calibration. Recalibrating will improve accuracy.</Notice>}
@@ -269,7 +297,7 @@ export default function EyeSetup() {
               <fieldset className="grid gap-3 sm:grid-cols-3">
                 <legend className="mb-2 text-sm font-medium text-zinc-300">Preferences</legend>
                 <label className="text-sm text-zinc-400">Sensitivity
-                  <select value={s.settings.sensitivity} onChange={(e) => eye.setSettings({ sensitivity: e.target.value })} className="mt-1 block w-full rounded-xl border border-white/10 bg-zinc-950/60 px-3 py-2 text-zinc-200">
+                  <select value={s.settings.sensitivity} onChange={(e) => eye.setSettings({ sensitivity: e.target.value })} className="mt-1 block w-full rounded-lg border border-zinc-700 bg-zinc-900 px-3 py-2 text-zinc-200">
                     {Object.keys(SENSITIVITY).map((k) => <option key={k} value={k}>{k} ({SENSITIVITY[k].confirmDownMs} ms)</option>)}
                   </select>
                 </label>
@@ -282,7 +310,7 @@ export default function EyeSetup() {
 
         {step === 'position' && (
           <div className="mt-4 grid gap-5 md:grid-cols-2">
-            <div className="relative overflow-hidden rounded-xl border border-white/[0.08]">
+            <div className="relative overflow-hidden rounded-lg border border-zinc-800">
               <Preview className="aspect-[4/3] w-full" />
               <div className="pointer-events-none absolute inset-0 flex items-center justify-center" aria-hidden="true"><div className="h-3/4 w-1/2 rounded-[50%] border-2 border-dashed border-white/40" /></div>
             </div>
@@ -294,8 +322,8 @@ export default function EyeSetup() {
                 <li>• Put the webcam at the top of the screen, light in front of you (not behind).</li>
               </ul>
               <div className="mt-4 space-y-2" aria-live="polite">
-                {s.issues.length === 0 && s.mode === 'positioning' && positionReady && <p className="text-sm text-emerald-300">✓ Good position</p>}
-                {s.issues.map((i) => <p key={i.id} className={cx('rounded-md px-3 py-2 text-sm', i.severity === 'error' ? 'bg-red-950/40 text-red-200' : 'bg-amber-950/30 text-amber-200')}>{i.message}</p>)}
+                {s.issues.length === 0 && s.mode === 'positioning' && positionReady && <p className="text-sm text-emerald-400">✓ Good position</p>}
+                {s.issues.map((i) => <p key={i.id} className={cx('rounded-md px-3 py-2 text-sm', i.severity === 'error' ? 'bg-red-950/40 text-red-200' : 'bg-amber-950/30 text-[#d9a441]')}>{i.message}</p>)}
               </div>
               <div className="mt-5 flex gap-2">
                 <Button disabled={!positionReady || blocking.length > 0} onClick={() => { data.current = { screenSegments: [], downSegments: [], brightness: [] }; setStep('screen') }}>Continue</Button>
@@ -319,7 +347,7 @@ export default function EyeSetup() {
                 </dl>
               )}
               <p className="mt-3 text-xs text-zinc-500">{result.quality.validated ? 'These rates are cross-validated: each capture step was held out and scored by a model that never saw it.' : 'These rates were measured on the calibration frames themselves.'} They describe this short calibration, so use the live check below to confirm tracking follows you while you really type.</p>
-              {result.quality.issues?.map((i) => <p key={i.id} className={cx('mt-2 text-sm', i.severity === 'error' ? 'text-red-300' : i.severity === 'warn' ? 'text-amber-300' : 'text-zinc-400')}>• {i.message}</p>)}
+              {result.quality.issues?.map((i) => <p key={i.id} className={cx('mt-2 text-sm', i.severity === 'error' ? 'text-[#e0605b]' : i.severity === 'warn' ? 'text-[#d9a441]' : 'text-zinc-400')}>• {i.message}</p>)}
             </div>
             {!result.ok && <Notice tone="warn">Tracking will not be used to score your sessions with this calibration, so you won&apos;t get a misleading visual-discipline number. Adjust the camera or lighting and try again, or continue without eye tracking.</Notice>}
             <div className="flex flex-wrap gap-2">

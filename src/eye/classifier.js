@@ -9,7 +9,7 @@
 //   unavailable  no face / camera lost
 // Short deviations that return to the screen are recorded as brief glances, not peeks.
 
-import { projectScore } from './calibration.js'
+import { projectScore, signalZ } from './calibration.js'
 
 /**
  * One-Euro filter (Casiez et al.): heavy smoothing while the signal is steady,
@@ -53,15 +53,17 @@ export const STATE = Object.freeze({
 })
 
 export const SENSITIVITY = {
-  relaxed: { confirmDownMs: 750, enterDown: 0.75 },
-  balanced: { confirmDownMs: 450, enterDown: 0.7 },
-  strict: { confirmDownMs: 300, enterDown: 0.62 },
+  // `shift` moves this user's own calibrated threshold up or down
+  relaxed: { confirmDownMs: 700, shift: 0.07 },
+  balanced: { confirmDownMs: 400, shift: 0 },
+  strict: { confirmDownMs: 260, shift: -0.07 },
 }
 
 export const DEFAULT_PARAMS = {
   enterDown: 0.7,
   exitDown: 0.45,
-  confirmDownMs: 450,
+  confirmDownMs: 400,
+  shift: 0,
   confirmAwayMs: 800,
   exitConfirmMs: 150,
   minBriefMs: 150,
@@ -126,19 +128,21 @@ export function scoreFrame(profile, f, { params = DEFAULT_PARAMS, offset = null,
     return { label: 'away', t, z, confidence, reason: yawDev > yawLimit ? 'head-turned' : t < params.upScore ? 'looking-up' : 'eyes-sideways' }
   }
 
-  // Strong signals must agree: head down while eyes stay on the screen is thinking, not a peek.
-  const strong = profile.axes.filter((a) => a.snr >= 2 && z[a.feature] != null)
-  if (strong.length >= 2) {
-    const zs = strong.map((a) => z[a.feature])
-    if (Math.max(...zs) > 0.8 && Math.min(...zs) < 0.15) {
-      return { label: 'uncertain', t, z, confidence, reason: 'signals-disagree' }
-    }
+  // A dipped head with eyes rolled UP toward the screen is thinking or nodding, not a peek.
+  // (Eyes dropping while the head stays still is a real, eyes-only peek and is NOT excluded.)
+  const pooled = signalZ(profile, f, offset)
+  const eyeZ = ['gazeV', 'gazeLid', 'lookDown'].map((k) => pooled[k]).filter((v) => v != null)
+  const eyeMean = eyeZ.length ? eyeZ.reduce((x, y) => x + y, 0) / eyeZ.length : null
+  if (pooled.pitch != null && pooled.pitch > 0.5 && eyeMean != null && eyeMean < -0.2) {
+    return { label: 'uncertain', t, z, confidence, reason: 'head-down-eyes-up' }
   }
 
-  const enter = inKeyboard ? params.exitDown : params.enterDown
-  if (t >= enter) return { label: 'down', t, z, confidence }
-  if (t >= params.exitDown && !inKeyboard) return { label: 'uncertain', t, z, confidence, reason: 'ambiguous' }
-  return { label: 'screen', t, z, confidence }
+  const th = profile.thresholds ?? { enter: params.enterDown, exit: params.exitDown }
+  const enterAt = Math.min(0.9, Math.max(0.4, th.enter + (params.shift ?? 0)))
+  const exitAt = Math.min(enterAt - 0.1, th.exit + (params.shift ?? 0))
+  if (t >= (inKeyboard ? exitAt : enterAt)) return { label: 'down', t, z: pooled, confidence }
+  if (t >= exitAt && !inKeyboard) return { label: 'uncertain', t, z: pooled, confidence, reason: 'ambiguous' }
+  return { label: 'screen', t, z: pooled, confidence }
 }
 
 /**
@@ -365,6 +369,7 @@ export class GazeTracker {
       score: this.last.t ?? null,
       confidence: this.last.confidence ?? 0,
       reason: this.last.reason,
+      z: this.last.z ?? null,
       candidate: this.cand?.label ?? null,
       events,
     }

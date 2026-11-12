@@ -36,3 +36,11 @@ per-frame cost is dominated by the delegate. Inference runs on the main thread, 
 * **One-Euro filter** on the score: less jitter, a real look still crosses the threshold within ~250 ms of filter lag (tested).
 * **Re-centre**: 1.5 s of screen-looking resets the baseline after a posture change, without recalibrating.
 * **Peek triggers**: keyboard looks are matched to the keys being typed (`analysis.attributePeeks`), giving "keys you look down for".
+
+## v4 changes
+* **Runs in a Web Worker** (`src/eye/worker.js`): frames are sent as transferred `ImageBitmap`s, only the feature vector comes back. The earlier claim that MediaPipe could not run in a module worker was wrong — `FilesetResolver.forVisionTasks(path, true)` selects its ES-module Wasm loader. Falls back to the main thread if workers are unavailable. Software-rendered GPUs are detected up front and skipped.
+* **Several ways of peeking**: each distinct keyboard capture (head tilt, eyes only…) becomes its own prototype; the score is the best match. Previously they were averaged into one blurred "keyboard look".
+* **Nodding rule corrected**: only a dipped head with eyes rolled *up* is excluded. Before, an eyes-only peek (head still, eyes down) was wrongly marked uncertain.
+* **Personal thresholds** chosen between the user's own screen and keyboard score distributions, only when they are clearly apart, within fixed bounds.
+* **Teach**: "I'm looking at the screen / keyboard" adds 2 s of labelled data to the stored calibration and refits; a correction that would break a working calibration is discarded.
+* **Diagnostics**: per-signal live bars and a "copy diagnostics" export (numbers only) for tuning from real use.

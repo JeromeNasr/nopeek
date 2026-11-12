@@ -1,27 +1,39 @@
-// TouchType typing engine: a pure, DOM-free state machine.
+// TouchType typing engine.
 //
-// Behaviour is modelled on the well-known conventions of modern typing tests
-// (timer starts on the first keystroke; space commits a word; you may only
-// step back into a word you got wrong; WPM counts only correct words; accuracy
-// counts every keystroke, including ones later corrected). It is an
-// independent implementation - no Monkeytype source code is included. See
-// NOTICE.md.
+// Input rules are ported from Monkeytype's input handlers
+// (frontend/src/ts/input/handlers/{before-insert-text,insert-text,before-delete,delete}.ts and
+// input/helpers/{validation,fail-or-finish}.ts) with Monkeytype's default settings
+// (difficulty normal, no stop/delete on error, confidence off, quick end off):
+//   * each word's target is the word plus its commit character (a space), except the last word
+//   * a leading space on an empty word is ignored; any other space commits the word
+//   * at most 20 characters beyond the target
+//   * backspace on an empty word steps back only if the previous word is not correct
+//   * a fixed-length test ends when the last word is typed correctly, or on space
+// Every keystroke is recorded in Monkeytype's EVENT LOG format and all statistics are
+// computed by Monkeytype's own, unmodified code in src/vendor/monkeytype (GPL-3.0).
 //
-// All times are supplied by the caller (ms, any monotonic origin) which makes
-// the engine fully deterministic and unit-testable.
+// Times are supplied by the caller (ms, monotonic), which keeps the engine deterministic.
 
-import { accuracyPct, consistencyOf, mean, roundTo, wpmFromChars } from './stats.js'
+import * as MT from '../vendor/monkeytype/frontend/src/ts/test/events/stats.ts'
+import { calculateWpm } from '../vendor/monkeytype/frontend/src/ts/utils/numbers.ts'
+import { isSpace } from '../vendor/monkeytype/frontend/src/ts/utils/strings.ts'
+import { kogasa, mean, roundTo2, stdDev } from '../vendor/monkeytype/packages/util/src/numbers.ts'
 
 export const MAX_EXTRA_CHARS = 20
+
+const consistencyOf = (arr) => {
+  const c = roundTo2(kogasa(stdDev(arr) / mean(arr)))
+  return !c || Number.isNaN(c) ? 0 : c
+}
 
 export class TypingEngine {
   /**
    * @param {object} o
    * @param {string[]} o.words
-   * @param {'time'|'words'|'custom'|'lesson'} [o.mode]
+   * @param {'time'|'words'|'custom'|'lesson'|'practice'} [o.mode]
    * @param {number|null} [o.timeLimitMs]   end automatically after this long
    * @param {boolean} [o.fixedLength]       end when the last word is typed
-   * @param {(n:number)=>string[]} [o.supplier] extend words for endless/timed tests
+   * @param {(n:number)=>string[]} [o.supplier] extend words for timed tests
    */
   constructor({ words, mode = 'time', timeLimitMs = null, fixedLength = null, supplier = null }) {
     this.words = [...words]
@@ -33,20 +45,19 @@ export class TypingEngine {
   }
 
   reset() {
-    this.typed = ['']
-    this.committed = [] // boolean per committed word
+    this.inputs = [''] // per word, including the commit space once committed (Monkeytype's inputValue)
+    this.typed = [''] // same without the commit space, for rendering
+    this.committed = []
     this.wi = 0
-    this.log = []
+    this.events = [] // Monkeytype event log
+    this.log = [] // compact keystroke records for TouchType's mistake analysis
     this.startedAt = null
+    this.startDate = null
     this.endedAt = null
     this.finished = false
     this.finishReason = null
-    this.correctKeys = 0
-    this.incorrectKeys = 0
     this.backspaces = 0
     this.corrections = 0
-    this.samples = [] // per-second {sec, wpm, raw, errors}
-    this._nextSample = 1000
     this._lastKeyAt = null
     this._lastCode = null
     this._lastOk = true
@@ -65,85 +76,132 @@ export class TypingEngine {
     return this.typed[this.wi] ?? ''
   }
 
+  get correctKeys() {
+    return MT.getAccuracy(this.eventLog()).correct
+  }
+
+  get incorrectKeys() {
+    return MT.getAccuracy(this.eventLog()).incorrect
+  }
+
+  /** The word plus its commit character (Monkeytype: textWithCommit). */
+  target(i) {
+    const w = this.words[i]
+    if (w === undefined) return ''
+    return this.fixedLength && i === this.words.length - 1 ? w : w + ' '
+  }
+
+  _ms(t) {
+    return t - this.startedAt
+  }
+
+  _start(t) {
+    this.startedAt = t
+    this.startDate = Date.now()
+    this.events.push({ type: 'timer', testMs: 0, data: { event: 'start', timer: 0, date: this.startDate } })
+  }
+
   // ---- input -------------------------------------------------------------
 
   /** Type one character. Returns true if it changed state. */
   insertChar(ch, { t, code = null } = {}) {
     if (this.finished || typeof ch !== 'string' || ch.length === 0) return false
-    if (ch === ' ') return this._commitWord(t, code)
-    if (this.startedAt === null) this.startedAt = t
+    const space = isSpace(ch)
+    if (space) ch = ' '
+    const input = this.inputs[this.wi]
+    // before-insert-text: a separator on an empty word does nothing
+    if (space && input === '') return false
+    const target = this.target(this.wi)
+    const goingToNextWord = space // shouldGoToNextWord with default settings
+    if (input.length >= target.length + MAX_EXTRA_CHARS && !goingToNextWord) return false
+
+    if (this.startedAt === null) this._start(t)
     if (this._timedOut(t)) return false
-    this._sampleUpTo(t)
+    const testMs = this._ms(t)
+    const isLast = this.wi === this.words.length - 1
+    const correct = ch === target[input.length] // isCharCorrect
+    const after = input + ch
 
-    const word = this.currentWord
-    const typed = this.currentTyped
-    if (typed.length >= word.length + MAX_EXTRA_CHARS) return false
+    this.events.push({ type: 'keydown', testMs, data: { code: code || 'NoCode' } })
+    const data = { inputType: 'insertText', data: ch, correct, wordIndex: this.wi, charIndex: input.length, inputValue: after }
+    if (goingToNextWord) data.commitsWord = true
+    if (isLast && this.fixedLength) data.lastWord = true
+    this.events.push({ type: 'input', testMs, data })
 
-    const expected = word[typed.length] ?? null
-    const ok = expected === ch
-    this.typed[this.wi] = typed + ch
-    this._recordKey({ t, type: 'c', ch, exp: expected, code, ok })
+    const word = this.words[this.wi]
+    const pos = input.length
+    this.log.push({
+      t: testMs,
+      type: space ? 's' : 'c',
+      ch,
+      exp: pos < word.length ? word[pos] : space ? ' ' : null,
+      code,
+      ok: correct,
+      wi: this.wi,
+      pos,
+      pexp: pos > 0 && pos <= word.length ? word[pos - 1] : null,
+      prevCode: this._lastCode,
+      dt: this._lastKeyAt == null ? null : t - this._lastKeyAt,
+      prevOk: this._lastOk,
+    })
+    this._lastKeyAt = t
+    this._lastCode = code
+    this._lastOk = correct
 
-    if (
-      this.fixedLength &&
-      this.wi === this.words.length - 1 &&
-      this.typed[this.wi].length >= word.length
-    ) {
+    this.inputs[this.wi] = after
+    if (!space) this.typed[this.wi] = after
+
+    // fail-or-finish: all words typed and (last word correct, or committing it)
+    if (this.fixedLength && isLast && (after === target || goingToNextWord)) {
+      this.committed[this.wi] = this.typed[this.wi] === word
       this._finish('completed', t)
+    } else if (goingToNextWord) {
+      this.committed[this.wi] = after === target
+      this.wi++
+      this.inputs[this.wi] = ''
+      this.typed[this.wi] = ''
+      if (this.wi >= this.words.length - 3 && this.supplier) this.words.push(...this.supplier(40))
     }
     this.version++
     return true
   }
 
-  _commitWord(t, code) {
-    const typed = this.currentTyped
-    if (typed.length === 0) return false // like most typing tests: ignore leading/double spaces
-    if (this._timedOut(t)) return false
-    this._sampleUpTo(t)
-    const word = this.currentWord
-    const ok = typed.length >= word.length // space only "correct" once the word is fully typed
-    this._recordKey({ t, type: 's', ch: ' ', exp: ' ', code, ok })
-    this.committed[this.wi] = typed === word
-    this.wi++
-    this.typed[this.wi] = ''
-    if (this.wi >= this.words.length - 3 && this.supplier) {
-      this.words.push(...this.supplier(40))
-    }
-    if (this.fixedLength && this.wi >= this.words.length) this._finish('completed', t)
-    this.version++
-    return true
-  }
-
-  /** Backspace; `word` deletes the whole current word (ctrl/alt+backspace). */
+  /** Backspace; `word` deletes back a whole word (ctrl/alt+backspace). */
   backspace({ t, word = false } = {}) {
     if (this.finished || this.startedAt === null) return false
     if (this._timedOut(t)) return false
-    let typed = this.currentTyped
-    if (typed.length === 0) {
-      // Only step back into a word that was wrong.
-      if (this.wi > 0 && this.committed[this.wi - 1] === false) {
-        this.typed.pop()
-        this.committed.pop()
-        this.wi--
-        this.log.push({ t: t - this.startedAt, type: 'b', ok: false, wi: this.wi })
-        this.backspaces++
-        this._lastOk = false
-        this.version++
-        return true
-      }
-      return false
+    const input = this.inputs[this.wi]
+    const testMs = this._ms(t)
+    const inputType = word ? 'deleteWordBackward' : 'deleteContentBackward'
+
+    if (input === '') {
+      // before-delete: nothing before the first word, and a correct previous word is locked
+      if (this.wi === 0) return false
+      const prev = this.inputs[this.wi - 1]
+      if (prev === this.target(this.wi - 1)) return false
+      this.inputs.pop()
+      this.typed.pop()
+      this.committed.pop()
+      this.wi--
+      // the backspace removes the commit space (or the whole word for a word-delete)
+      const after = word ? '' : prev.endsWith(' ') ? prev.slice(0, -1) : prev
+      this.inputs[this.wi] = after
+      this.typed[this.wi] = after
+      this.events.push({ type: 'keydown', testMs, data: { code: 'Backspace' } })
+      this.events.push({ type: 'input', testMs, data: { inputType, wordIndex: this.wi, charIndex: prev.length, inputValue: after } })
+    } else {
+      const target = this.target(this.wi)
+      const after = word ? input.replace(/(?:\S+\s*|\s+)$/, '') : input.slice(0, -1)
+      for (let i = after.length; i < input.length; i++) if (input[i] !== target[i]) this.corrections++
+      this.inputs[this.wi] = after
+      this.typed[this.wi] = after
+      this.events.push({ type: 'keydown', testMs, data: { code: 'Backspace' } })
+      this.events.push({ type: 'input', testMs, data: { inputType, wordIndex: this.wi, charIndex: input.length, inputValue: after } })
     }
-    this._sampleUpTo(t)
-    const target = this.currentWord
-    const removeFrom = word ? 0 : typed.length - 1
-    for (let i = removeFrom; i < typed.length; i++) {
-      if (typed[i] !== target[i]) this.corrections++
-    }
-    typed = typed.slice(0, removeFrom)
-    this.typed[this.wi] = typed
     this.backspaces++
     this._lastOk = false
-    this.log.push({ t: t - this.startedAt, type: 'b', ok: false, wi: this.wi })
+    this._lastKeyAt = t
+    this.log.push({ t: testMs, type: 'b', ok: false, wi: this.wi })
     this.version++
     return true
   }
@@ -151,13 +209,7 @@ export class TypingEngine {
   /** Call from a timer; ends timed tests. */
   tick(t) {
     if (this.finished || this.startedAt === null) return false
-    this._sampleUpTo(t)
-    if (this._timedOut(t)) {
-      this._finish('time', this.startedAt + this.timeLimitMs)
-      this.version++
-      return true
-    }
-    return false
+    return this._timedOut(t)
   }
 
   finishNow(t) {
@@ -166,12 +218,9 @@ export class TypingEngine {
     this.version++
   }
 
-  // ---- internals ---------------------------------------------------------
-
   _timedOut(t) {
     if (this.timeLimitMs == null || this.startedAt === null) return false
     if (t - this.startedAt >= this.timeLimitMs) {
-      this._sampleUpTo(this.startedAt + this.timeLimitMs)
       this._finish('time', this.startedAt + this.timeLimitMs)
       this.version++
       return true
@@ -179,88 +228,35 @@ export class TypingEngine {
     return false
   }
 
-  _recordKey({ t, type, ch, exp, code, ok }) {
-    const pos = type === 's' ? this.currentTyped.length : this.currentTyped.length - 1
-    if (ok) this.correctKeys++
-    else this.incorrectKeys++
-    this.log.push({
-      t: t - this.startedAt,
-      type,
-      ch,
-      exp,
-      code,
-      ok,
-      wi: this.wi,
-      pos,
-      // previous expected character within the same word (for bigram timing)
-      pexp: pos > 0 ? this.words[this.wi]?.[pos - 1] ?? null : null,
-      prevCode: this._lastCode,
-      // time since the previous keystroke; only meaningful if that one was a clean key press
-      dt: this._lastKeyAt == null ? null : t - this._lastKeyAt,
-      prevOk: this._lastOk,
-    })
-    this._lastKeyAt = t
-    this._lastCode = code
-    this._lastOk = ok
-  }
-
   _finish(reason, t) {
     this.finished = true
     this.finishReason = reason
     this.endedAt = Math.max(t, this.startedAt)
+    const testMs = this._ms(this.endedAt)
+    this.events.push({ type: 'timer', testMs, data: { event: 'end', timer: Math.floor(testMs / 1000), date: this.startDate + testMs } })
   }
 
-  _sampleUpTo(t) {
-    if (this.startedAt === null) return
-    const elapsed = t - this.startedAt
-    while (this._nextSample <= elapsed) {
-      const c = this.charCounts()
-      this.samples.push({
-        sec: this._nextSample / 1000,
-        wpm: roundTo(wpmFromChars(c.correctWord, this._nextSample)),
-        raw: roundTo(wpmFromChars(c.typedTotal, this._nextSample)),
-        errors: this.incorrectKeys,
-      })
-      this._nextSample += 1000
+  // ---- statistics (Monkeytype) ---------------------------------------------
+
+  /** Monkeytype EventLog for the vendored statistics code. */
+  eventLog() {
+    const timed = this.timeLimitMs != null
+    return {
+      version: 1,
+      events: this.events,
+      context: {
+        targetWords: this.words.map((_, i) => this.target(i)),
+        mode: timed ? 'time' : 'words',
+        mode2: timed ? String(this.timeLimitMs / 1000) : String(this.words.length),
+        bailedOut: this.finishReason === 'manual',
+        hasKorean: false,
+      },
     }
   }
 
-  // ---- statistics --------------------------------------------------------
-
-  /**
-   * Character accounting at the current state.
-   * correctWord counts characters in correct words plus their trailing space,
-   * and the correct prefix of the word being typed - the figure used for WPM.
-   */
-  charCounts() {
-    let correctWord = 0
-    let incorrect = 0
-    let extra = 0
-    let missed = 0
-    let typedTotal = 0
-    const lastIndex = Math.min(this.wi, this.typed.length - 1)
-    for (let i = 0; i <= lastIndex; i++) {
-      const typed = this.typed[i] ?? ''
-      const word = this.words[i] ?? ''
-      const isCommitted = i < this.wi
-      typedTotal += typed.length + (isCommitted ? 1 : 0)
-      if (isCommitted && typed === word) {
-        correctWord += word.length + 1
-        continue
-      }
-      if (!isCommitted) {
-        // the word being typed: its correct prefix counts toward WPM
-        let prefix = 0
-        while (prefix < typed.length && typed[prefix] === word[prefix]) prefix++
-        correctWord += prefix
-      }
-      for (let k = 0; k < typed.length; k++) {
-        if (k >= word.length) extra++
-        else if (typed[k] !== word[k]) incorrect++
-      }
-      if (isCommitted && typed.length < word.length) missed += word.length - typed.length
-    }
-    return { correctWord, incorrect, extra, missed, typedTotal }
+  /** Monkeytype character counts ({allCorrect, correctWord, incorrect, extra, missed}). */
+  charCounts(testMs) {
+    return MT.getChars(this.eventLog(), !this.finished, testMs)
   }
 
   elapsedMs(t) {
@@ -269,60 +265,51 @@ export class TypingEngine {
     return Math.max(0, end - this.startedAt)
   }
 
-  /** Cheap live numbers for the HUD. */
+  /** Live numbers for the HUD. */
   live(t) {
     const ms = this.elapsedMs(t)
     if (ms <= 0) return { wpm: 0, raw: 0, accuracy: null, elapsedMs: 0 }
-    const c = this.charCounts()
-    const span = Math.max(ms, 1000) // avoid absurd spikes in the first second
+    const log = this.eventLog()
+    const c = MT.getChars(log, true)
+    const sec = Math.max(ms, 1000) / 1000 // avoid absurd spikes in the first second
     return {
-      wpm: Math.round(wpmFromChars(c.correctWord, span)),
-      raw: Math.round(wpmFromChars(c.typedTotal, span)),
-      accuracy: accuracyPct(this.correctKeys, this.incorrectKeys),
+      wpm: Math.round(calculateWpm(c.correctWord, sec)),
+      raw: Math.round(calculateWpm(c.allCorrect + c.incorrect + c.extra, sec)),
+      accuracy: MT.getAccuracy(log).percentage,
       elapsedMs: ms,
     }
   }
 
-  /** Full result once finished (or a snapshot of the current state). */
-  summary(t = this.endedAt ?? 0) {
-    const ms = this.elapsedMs(t)
-    const c = this.charCounts()
-    const wpm = wpmFromChars(c.correctWord, ms)
-    const raw = wpmFromChars(c.typedTotal, ms)
-    const acc = accuracyPct(this.correctKeys, this.incorrectKeys)
-
-    // per-second raw burst (chars typed in each whole second, as WPM)
-    const seconds = Math.floor(ms / 1000)
-    const burst = new Array(Math.max(seconds, 0)).fill(0)
-    for (const e of this.log) {
-      if (e.type === 'b') continue
-      const s = Math.floor(e.t / 1000)
-      if (s < seconds) burst[s] += 1
-    }
-    const burstWpm = burst.map((n) => roundTo(wpmFromChars(n, 1000)))
-    const intervals = []
-    for (const e of this.log) if (e.dt != null && e.type !== 'b') intervals.push(e.dt)
-
+  /** Full result, mirroring Monkeytype's buildCompletedEvent. */
+  summary() {
+    const log = this.eventLog()
+    if (!this.finished) log.events = [...this.events, { type: 'timer', testMs: this._lastKeyAt != null ? this._ms(this._lastKeyAt) : 0, data: { event: 'end', timer: 0, date: 0 } }]
+    const chars = MT.getChars(log)
+    const duration = MT.getTestDurationMs(log) / 1000
+    const acc = MT.getAccuracy(log)
+    const burst = MT.getBurstHistory(log)
+    const spacing = MT.getKeypressSpacing(log)
     return {
       mode: this.mode,
       finishReason: this.finishReason,
-      durationMs: Math.round(ms),
-      wpm: roundTo(wpm),
-      rawWpm: roundTo(raw),
-      accuracy: acc == null ? null : roundTo(acc),
-      consistency: consistencyOf(burstWpm),
-      keyConsistency: consistencyOf(intervals.slice(0, -1)),
-      meanKeyIntervalMs: roundTo(mean(intervals), 1),
-      correctKeys: this.correctKeys,
-      incorrectKeys: this.incorrectKeys,
+      durationMs: Math.round(duration * 1000),
+      wpm: roundTo2(calculateWpm(chars.correctWord, duration)),
+      rawWpm: roundTo2(calculateWpm(chars.allCorrect + chars.incorrect + chars.extra, duration)),
+      accuracy: acc.percentage == null ? null : roundTo2(acc.percentage),
+      consistency: burst.length >= 2 ? consistencyOf(burst) : null,
+      keyConsistency: spacing.length >= 3 ? consistencyOf(spacing.slice(0, -1)) : null,
+      meanKeyIntervalMs: spacing.length ? roundTo2(mean(spacing)) : 0,
+      correctKeys: acc.correct,
+      incorrectKeys: acc.incorrect,
       backspaces: this.backspaces,
       corrections: this.corrections,
-      chars: c,
+      chars,
       wordsCompleted: this.committed.length,
       wordsCorrect: this.committed.filter(Boolean).length,
-      wpmHistory: this.samples.map((s) => s.wpm),
-      rawHistory: this.samples.map((s) => s.raw),
-      burstHistory: burstWpm,
+      wpmHistory: MT.getWpmHistory(log),
+      rawHistory: MT.getRawHistory(log),
+      burstHistory: burst,
+      errorHistory: MT.getErrorCountHistory(log),
     }
   }
 }

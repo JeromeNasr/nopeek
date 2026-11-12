@@ -1,22 +1,29 @@
 import { useEffect, useState } from 'react'
-import { supabase } from '../supabaseClient'
+import { getSupabase, hasStoredSession, isCloudConfigured, onClientReady } from '../supabaseClient'
 
 /** Current Supabase user (null when signed out or cloud not configured). */
 export function useAuth() {
-  const [state, setState] = useState({ user: null, loading: Boolean(supabase) })
+  const [state, setState] = useState(() => ({ user: null, loading: isCloudConfigured && hasStoredSession() }))
 
   useEffect(() => {
-    if (!supabase) return undefined
+    if (!isCloudConfigured) return undefined
     let cancelled = false
-    supabase.auth.getSession().then(({ data }) => {
-      if (!cancelled) setState({ user: data.session?.user ?? null, loading: false })
+    let unsubscribe = null
+    const off = onClientReady((supabase) => {
+      if (cancelled) return
+      supabase.auth.getSession().then(({ data }) => {
+        if (!cancelled) setState({ user: data.session?.user ?? null, loading: false })
+      })
+      const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+        setState({ user: session?.user ?? null, loading: false })
+      })
+      unsubscribe = () => sub.subscription.unsubscribe()
     })
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
-      setState({ user: session?.user ?? null, loading: false })
-    })
+    if (hasStoredSession()) getSupabase()
     return () => {
       cancelled = true
-      sub.subscription.unsubscribe()
+      off()
+      unsubscribe?.()
     }
   }, [])
 

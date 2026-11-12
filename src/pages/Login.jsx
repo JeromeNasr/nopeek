@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { supabase } from '../supabaseClient'
+import { getSupabase } from '../supabaseClient'
 import { useAuth } from '../data/useAuth'
 
 export default function Login() {
@@ -28,6 +28,7 @@ export default function Login() {
     setMessage(null)
 
     try {
+      const supabase = await getSupabase()
       if (!supabase) throw new Error('Accounts are not configured for this deployment. Your progress is saved on this device.')
       if (isSignIn) {
         const { error: signInError } = await supabase.auth.signInWithPassword({
@@ -59,13 +60,13 @@ export default function Login() {
   if (user) {
     return (
       <div className="mx-auto flex max-w-md flex-col px-6 py-16">
-        <div className="rounded-xl border border-white/[0.08] bg-zinc-900/50 p-8">
+        <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-8">
           <h1 className="text-2xl font-semibold tracking-tight text-white">You&apos;re signed in</h1>
           <p className="mt-2 text-sm text-zinc-400">{user.email}</p>
           <p className="mt-2 text-sm text-zinc-500">Sessions and your keyboard setup sync to your account. Eye-tracking calibration and the camera stay on this device.</p>
           <div className="mt-6 flex gap-3">
             <button type="button" onClick={() => navigate('/analyze')} className="rounded-lg bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-zinc-950 hover:bg-emerald-400">View analytics</button>
-            <button type="button" onClick={async () => { await supabase.auth.signOut(); navigate('/') }} className="rounded-lg border border-zinc-700 px-4 py-2.5 text-sm text-zinc-300 hover:border-zinc-500">Sign out</button>
+            <button type="button" onClick={async () => { const supabase = await getSupabase(); await supabase.auth.signOut(); navigate('/') }} className="rounded-lg border border-zinc-700 px-4 py-2.5 text-sm text-zinc-300 hover:border-zinc-500">Sign out</button>
           </div>
         </div>
       </div>
@@ -74,7 +75,7 @@ export default function Login() {
 
   return (
     <div className="mx-auto flex max-w-md flex-col px-6 py-16">
-      <div className="rounded-xl border border-white/[0.08] bg-zinc-900/50 p-8 shadow-xl shadow-black/20">
+      <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-8 shadow-xl shadow-black/20">
         <h1 className="text-2xl font-semibold tracking-tight text-white">
           {isSignIn ? 'Welcome back' : 'Create an account'}
         </h1>
