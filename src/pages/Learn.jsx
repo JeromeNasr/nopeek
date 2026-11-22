@@ -100,18 +100,20 @@ function LessonInner({ id }) {
   const { profile, progress } = useTraining()
   const [started, setStarted] = useState(false)
 
-  const prior = progress.byLesson[id]?.attempts ?? 0
+  // Seeded once per visit. (It must not depend on saved progress: saving an attempt changes progress,
+  // which would regenerate the exercise and throw away the result screen.)
+  const [visitSeed] = useState(() => Math.random().toString(36).slice(2))
   const makeRun = useCallback(
     (attempt) => {
       if (!lesson) return { words: ['x'] }
-      const seed = `${prior}:${attempt}`
+      const seed = `${visitSeed}:${attempt}`
       const words = generateLessonWords(lesson, { layout: profile.layout, seed })
       if (lesson.timeLimit) {
         return { words, timeLimitMs: lesson.timeLimit * 1000, supplier: (n) => generateLessonWords(lesson, { layout: profile.layout, seed: `${seed}:${Math.random()}`, count: n }) }
       }
       return { words }
     },
-    [lesson, profile.layout, prior],
+    [lesson, profile.layout, visitSeed],
   )
 
   if (!lesson) {

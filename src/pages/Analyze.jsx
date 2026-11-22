@@ -93,13 +93,13 @@ export default function Analyze() {
     })
   }, [sessions])
 
-  if (loading) return <div className="mx-auto max-w-6xl px-6 py-10"><Spinner label="Loading your sessions…" /></div>
+  if (loading) return <div className="mx-auto max-w-5xl px-6 py-10"><Spinner label="Loading your sessions…" /></div>
 
   if (sessions.length === 0) {
     return (
-      <div className="mx-auto max-w-6xl px-6 py-10">
-        <PageHeader title="Stats" />
-        <EmptyState title="No sessions yet" action={<div className="flex justify-center gap-3"><Button to="/learn">Start Lesson 1</Button><Button variant="secondary" to="/test">Take a test</Button></div>}>
+      <div className="mx-auto max-w-5xl px-6 py-10">
+        <PageHeader title="Progress" />
+        <EmptyState title="No sessions yet" action={<div className="flex gap-3"><Button to="/learn/1.1">Start lesson 1</Button><Button variant="secondary" to="/">Take a test</Button></div>}>
           Finish a lesson, drill or test and your results appear here. Nothing on this page is estimated – every figure comes from a session you typed.
         </EmptyState>
       </div>
@@ -113,8 +113,8 @@ export default function Analyze() {
   const hasKeyData = w?.enoughData
 
   return (
-    <div className="mx-auto max-w-6xl px-6 py-10">
-      <PageHeader title="Stats" subtitle="Everything here is measured from runs you typed. Nothing is estimated." />
+    <div className="mx-auto max-w-5xl px-6 py-10">
+      <PageHeader title="Progress" subtitle="Everything here is measured from runs you typed. Nothing is estimated." />
 
       {t.cloudError && <Notice tone="warn" className="mb-4" title="Could not load your cloud history">{t.cloudError}. Showing sessions saved on this device.</Notice>}
       {t.signedIn && t.pendingLocal > 0 && (
@@ -141,7 +141,7 @@ export default function Analyze() {
 
       <section aria-label="Summary" className="mt-8 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         <Q title="Doing well" tone="text-emerald-400" items={story.good} empty={story.insufficient ? 'Complete a few more runs to see patterns.' : 'Nothing stands out yet – keep going.'} />
-        <Q title="Struggling with" tone="text-[#d9a441]" items={story.bad} empty={story.insufficient ? 'Complete a few more runs to see patterns.' : 'No statistically supported weaknesses right now.'} />
+        <Q title="Struggling with" tone="text-[color:var(--warn)]" items={story.bad} empty={story.insufficient ? 'Complete a few more runs to see patterns.' : 'No statistically supported weaknesses right now.'} />
         <Q title="Improved" tone="text-zinc-300" items={story.improved} empty="Improvement is shown once you have enough runs to compare newer with older ones." />
         <Q title="Practise next" tone="text-zinc-300" items={story.next} empty="Recommendations appear after a few sessions." />
       </section>

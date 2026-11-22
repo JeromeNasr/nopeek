@@ -51,7 +51,7 @@ export default function Login() {
         }
       }
     } catch (err) {
-      setError(err.message)
+      setError(/failed to fetch|networkerror|load failed/i.test(err.message) ? "Can't reach the account server right now. Your progress is still saved on this device." : err.message)
     } finally {
       setLoading(false)
     }

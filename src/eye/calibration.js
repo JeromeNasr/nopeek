@@ -44,15 +44,17 @@ export function cleanSamples(samples) {
 /** Live positioning guidance from a single frame's features. */
 export function preflight(features, brightness = null) {
   const issues = []
-  if (!features) return [{ id: 'no-face', severity: 'error', message: 'No face detected. Face the camera and make sure the lens is uncovered.' }]
-  if (features.faceWidth < 0.2) issues.push({ id: 'too-far', severity: 'error', message: 'Move closer to the camera – your face is small in the frame.' })
+  if (!features) return [{ id: 'no-face', severity: 'error', message: 'No face found. Face the camera and make sure the lens is uncovered.' }]
+  // Only a missing face blocks calibration. Everything else is advice: the calibration
+  // quality check afterwards is what decides whether tracking can be trusted.
+  if (features.faceWidth < 0.1) issues.push({ id: 'too-far', severity: 'error', message: 'Your face is tiny in the frame. Move much closer to the camera.' })
+  else if (features.faceWidth < 0.17) issues.push({ id: 'too-far', severity: 'warn', message: 'Move a little closer – the eyes are small, so tracking will be less steady.' })
   else if (features.faceWidth > 0.65) issues.push({ id: 'too-close', severity: 'warn', message: 'You are very close to the camera – sit back a little.' })
-  if (features.marginFrac < 0.03) issues.push({ id: 'off-center', severity: 'warn', message: 'Part of your face is at the edge of the frame. Centre yourself in the preview.' })
-  if (brightness != null && brightness < 55) issues.push({ id: 'dark', severity: 'error', message: 'It is too dark. Face a light source or turn on a lamp (light should come from in front, not behind).' })
-  if (brightness != null && brightness > 225) issues.push({ id: 'bright', severity: 'warn', message: 'The image is very bright or washed out – reduce glare or backlighting.' })
-  if (features.roll != null && Math.abs(features.roll) > 18) issues.push({ id: 'tilted', severity: 'warn', message: 'Your head is tilted – straighten up for the best accuracy.' })
-  if (features.openness != null && features.openness < 0.1) issues.push({ id: 'eyes-closed', severity: 'warn', message: 'Your eyes look closed or squinting. Glasses glare or heavy hair across the eyes can cause this.' })
-  if (features.pitch != null && Math.abs(features.pitch) > 35) issues.push({ id: 'pitch-extreme', severity: 'warn', message: 'The camera sees your face from a steep angle. A webcam near the top of the screen works best.' })
+  if (features.marginFrac < 0.03) issues.push({ id: 'off-center', severity: 'warn', message: 'Part of your face is at the edge of the frame. Centre yourself.' })
+  if (brightness != null && brightness < 55) issues.push({ id: 'dark', severity: 'warn', message: 'It is quite dark. A lamp in front of you (not behind) helps a lot.' })
+  if (brightness != null && brightness > 225) issues.push({ id: 'bright', severity: 'warn', message: 'The image is washed out – reduce glare or backlighting.' })
+  if (features.roll != null && Math.abs(features.roll) > 18) issues.push({ id: 'tilted', severity: 'warn', message: 'Your head is tilted – straighten up.' })
+  if (features.openness != null && features.openness < 0.1) issues.push({ id: 'eyes-closed', severity: 'warn', message: 'Your eyes look closed or squinting. Glasses glare can cause this.' })
   return issues
 }
 

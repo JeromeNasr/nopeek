@@ -1,7 +1,6 @@
 import { Seg } from './ui.jsx'
-import { ACCENTS, THEMES, setPrefs, usePrefs } from '../lib/prefs.js'
+import { THEMES, setPrefs, usePrefs } from '../lib/prefs.js'
 import { playKey } from '../lib/sound.js'
-import { cx } from '../lib/cx.js'
 
 function Row({ title, hint, children }) {
   return (
@@ -22,14 +21,6 @@ export default function PrefsPanel({ className }) {
     <section className={className} aria-label="Preferences">
       <Row title="Theme">
         <Seg label="Theme" value={p.theme} onChange={(v) => setPrefs({ theme: v })} options={Object.entries(THEMES).map(([id, label]) => ({ id, label }))} />
-      </Row>
-      <Row title="Accent">
-        <div className="flex gap-2" role="radiogroup" aria-label="Accent colour">
-          {Object.entries(ACCENTS).map(([id, a]) => (
-            <button key={id} type="button" role="radio" aria-checked={p.accent === id} aria-label={a.label} title={a.label} onClick={() => setPrefs({ accent: id })}
-              className={cx('h-6 w-6 rounded-full outline-offset-2', p.accent === id && 'outline outline-2 outline-zinc-300')} style={{ background: a.color }} />
-          ))}
-        </div>
       </Row>
       <Row title="Caret">
         <Seg label="Caret style" value={p.caret} onChange={(v) => setPrefs({ caret: v })} options={[{ id: 'line', label: 'line' }, { id: 'block', label: 'block' }, { id: 'underline', label: 'underline' }]} />

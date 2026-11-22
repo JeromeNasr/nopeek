@@ -4,19 +4,18 @@ import { FaceLandmarker, FilesetResolver } from '@mediapipe/tasks-vision'
 import { extractFeatures, meanLuma } from './landmarks.js'
 
 let landmarker = null
-let delegate = null
-let fileset = null
-let modelPath = null
 let avgMs = 0
-let frames = 0
-let switching = false
 let lumaCanvas = null
 let lastLuma = 0
 let brightness = null
+let failures = 0
 
-async function make(kind) {
-  const options = {
-    baseOptions: { modelAssetPath: modelPath, delegate: kind },
+// CPU (XNNPACK) only: 15-30 ms per frame, and identical behaviour on every machine. The GPU
+// delegate inside a worker depends on the browser's WebGL-in-worker support and can fail silently.
+async function init({ wasmPath, model }) {
+  const fileset = await FilesetResolver.forVisionTasks(wasmPath, true) // ES-module Wasm loader: required in a module worker
+  landmarker = await FaceLandmarker.createFromOptions(fileset, {
+    baseOptions: { modelAssetPath: model, delegate: 'CPU' },
     runningMode: 'VIDEO',
     numFaces: 1,
     outputFaceBlendshapes: true,
@@ -24,58 +23,7 @@ async function make(kind) {
     minFaceDetectionConfidence: 0.5,
     minFacePresenceConfidence: 0.5,
     minTrackingConfidence: 0.5,
-  }
-  if (kind === 'GPU') options.canvas = new OffscreenCanvas(1, 1)
-  return FaceLandmarker.createFromOptions(fileset, options)
-}
-
-/** True when "GPU" would really be software rendering (SwiftShader, llvmpipe…), which is far slower than CPU inference. */
-function gpuIsSoftware() {
-  try {
-    const gl = new OffscreenCanvas(1, 1).getContext('webgl2') ?? new OffscreenCanvas(1, 1).getContext('webgl')
-    if (!gl) return true
-    const ext = gl.getExtension('WEBGL_debug_renderer_info')
-    const name = String(ext ? gl.getParameter(ext.UNMASKED_RENDERER_WEBGL) : gl.getParameter(gl.RENDERER))
-    return /swiftshader|llvmpipe|software|basic render/i.test(name)
-  } catch {
-    return true
-  }
-}
-
-async function init({ wasmPath, model, prefer }) {
-  modelPath = model
-  if (!prefer && gpuIsSoftware()) prefer = 'CPU'
-  fileset = await FilesetResolver.forVisionTasks(wasmPath, true) // ES-module Wasm loader: required inside a module worker
-  if (prefer !== 'CPU') {
-    try {
-      landmarker = await make('GPU')
-      delegate = 'GPU'
-      return
-    } catch {
-      /* fall through */
-    }
-  }
-  landmarker = await make('CPU')
-  delegate = 'CPU'
-}
-
-async function toCpu() {
-  if (switching || delegate !== 'GPU') return
-  switching = true
-  try {
-    const old = landmarker
-    landmarker = null
-    const next = await make('CPU')
-    try { old?.close() } catch { /* ignore */ }
-    landmarker = next
-    delegate = 'CPU'
-    avgMs = 0
-    frames = 0
-  } catch (err) {
-    self.postMessage({ type: 'error', message: `CPU fallback failed: ${err?.message ?? err}` })
-  } finally {
-    switching = false
-  }
+  })
 }
 
 function sampleBrightness(bitmap, t) {
@@ -96,7 +44,7 @@ self.onmessage = async (e) => {
   if (m.type === 'init') {
     try {
       await init(m)
-      self.postMessage({ type: 'ready', delegate })
+      self.postMessage({ type: 'ready', delegate: 'CPU' })
     } catch (err) {
       self.postMessage({ type: 'error', message: String(err?.message ?? err) })
     }
@@ -114,15 +62,16 @@ self.onmessage = async (e) => {
         features = lm
           ? extractFeatures(lm, res.facialTransformationMatrixes?.[0]?.data ?? null, bitmap.width, bitmap.height, res.faceBlendshapes?.[0]?.categories ?? null)
           : null
-      } catch {
+        failures = 0
+      } catch (err) {
         features = null
+        // a model that throws on every frame must be reported, not shown as "no face"
+        if (++failures === 8) self.postMessage({ type: 'error', message: `Face tracking failed: ${err?.message ?? err}` })
       }
       const ms = performance.now() - t0
       avgMs = avgMs ? avgMs * 0.9 + ms * 0.1 : ms
-      frames++
-      if (delegate === 'GPU' && frames >= 4 && avgMs > 90) toCpu()
     }
     bitmap.close()
-    self.postMessage({ type: 'result', t, features, brightness, ms: avgMs, delegate, skipped: !landmarker })
+    self.postMessage({ type: 'result', t, features, brightness, ms: avgMs, delegate: 'CPU', skipped: !landmarker })
   }
 }

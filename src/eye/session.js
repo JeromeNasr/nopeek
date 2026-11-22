@@ -35,6 +35,7 @@ class EyeSession {
     this.live = emptyLive()
     this.issues = []
     this.mode = 'idle'
+    this.face = false
     this.tracker = null
     this.gaze = null
     this.tally = null
@@ -68,6 +69,7 @@ class EyeSession {
       issues: this.issues,
       mode: this.mode,
       session: this.sessionSummary,
+      face: this.face,
     }
   }
 
@@ -233,6 +235,7 @@ class EyeSession {
     this.runtime = { ...this.runtime, phase: 'off', error: null, fps: 0 }
     this.live = emptyLive()
     this.issues = []
+    this.face = false
     this.mode = 'idle'
     this._capture = null
     this.gaze?.reset()
@@ -306,6 +309,13 @@ class EyeSession {
       this._capture.brightness.push(brightness)
     }
 
+    this.lastFeatures = features // latest frame, for diagnostics
+    const face = features != null
+    if (face !== this.face) {
+      this.face = face
+      dirty = true
+    }
+
     if (this.mode === 'positioning' && t - this._lastIssue > 250) {
       this._lastIssue = t
       this.issues = preflight(features, brightness)
@@ -337,3 +347,6 @@ class EyeSession {
 }
 
 export const eye = new EyeSession()
+
+// dev-only handle for debugging and automated tests
+if (import.meta.env?.DEV && typeof window !== 'undefined') window.__eye = eye

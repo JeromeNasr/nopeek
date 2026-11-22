@@ -68,7 +68,7 @@ export function EyeSummary({ tracking, history = [] }) {
         <p className="text-3xl font-semibold tabular-nums text-white">{t.discipline}%</p>
       </div>
       {delta != null && (
-        <p className={cx('mt-2 text-sm', delta >= 1 ? 'text-emerald-400' : delta <= -1 ? 'text-[#d9a441]' : 'text-zinc-400')}>
+        <p className={cx('mt-2 text-sm', delta >= 1 ? 'text-emerald-400' : delta <= -1 ? 'text-[color:var(--warn)]' : 'text-zinc-400')}>
           {delta >= 1 ? `Up ${delta.toFixed(0)} points` : delta <= -1 ? `Down ${Math.abs(delta).toFixed(0)} points` : 'About the same'} compared with your last {prior.length} tracked session{prior.length === 1 ? '' : 's'}.
         </p>
       )}
@@ -89,12 +89,12 @@ export default function Results({ result, lessonCheck, mistakeCodes, peekCodes, 
       <div className="mt-2 grid gap-x-12 gap-y-8 md:grid-cols-[auto_1fr] md:items-end">
         <div className="flex gap-10">
           <div>
-            <p className="text-sm text-zinc-500">wpm</p>
-            <p className="font-mono text-7xl font-medium leading-none tabular-nums text-emerald-400"><CountUp value={Math.round(r.wpm)} /></p>
+            <p className="text-sm text-zinc-500">words per minute</p>
+            <p className="font-serif text-8xl font-medium leading-none tabular-nums text-emerald-400"><CountUp value={Math.round(r.wpm)} /></p>
           </div>
           <div>
-            <p className="text-sm text-zinc-500">acc</p>
-            <p className="font-mono text-7xl font-medium leading-none tabular-nums text-emerald-400">{r.accuracy == null ? '–' : <><CountUp value={Math.round(r.accuracy)} />%</>}</p>
+            <p className="text-sm text-zinc-500">accuracy</p>
+            <p className="font-serif text-8xl font-medium leading-none tabular-nums text-emerald-400">{r.accuracy == null ? '–' : <><CountUp value={Math.round(r.accuracy)} />%</>}</p>
           </div>
         </div>
         <Sparkline series={r.wpmHistory} raw={r.rawHistory} />
@@ -116,7 +116,7 @@ export default function Results({ result, lessonCheck, mistakeCodes, peekCodes, 
           <ul className="space-y-1.5 text-sm">
             {lessonCheck.checks.map((c) => (
               <li key={c.id} className="flex items-baseline justify-between gap-3">
-                <span className="text-zinc-300"><span className={cx('mr-2 font-mono', c.ok ? 'text-emerald-400' : 'text-[#e0605b]')}>{c.ok ? '✓' : '×'}</span>{c.label}</span>
+                <span className="text-zinc-300"><span className={cx('mr-2 font-mono', c.ok ? 'text-emerald-400' : 'text-[color:var(--bad)]')}>{c.ok ? '✓' : '×'}</span>{c.label}</span>
                 <span className="font-mono tabular-nums text-zinc-200">
                   {c.actual == null ? '–' : typeof c.actual === 'number' ? Math.round(c.actual * 10) / 10 : c.actual}{c.unit}
                   <span className="text-zinc-600"> / {c.target}{c.unit}</span>

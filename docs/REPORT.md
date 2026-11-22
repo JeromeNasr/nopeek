@@ -77,3 +77,11 @@ Tests: 117. Simulation after v3 (25 simulated setups): 21 accepted, 0.026 false 
 Key-to-frame latency without the camera is unchanged (about 24 ms, bound by the display refresh in this environment).
 **Design**: flat, single accent, three themes (ink, midnight, paper); the home page is the typing test.
 **Tests**: 127. Simulation: 21/25 setups accepted, 0.026 false peeks/min, 100 % recall of 1-s peeks; plus a two-style (head-tilt and eyes-only) user where both styles are detected. Still simulation, not webcam validation.
+
+## 15. Fix pass: calibration, lesson result bug, identity
+* **Calibration screens were positioned relative to the page, not the window.** The page-entry animation used a CSS transform, which makes `position: fixed` descendants relative to the (long) page. Dots sat at 8-92 % of a ~2600 px page, so the user had to scroll to see them. The wizard is now portalled to `<body>` and verified: overlay height equals the viewport height on a 2608 px page; first dot inside the viewport.
+* **Calibration could not start for many users**: "too far" and "too dark" were hard errors disabling the button. Only "no face" blocks now; distance/lighting are advice and the quality check decides.
+* **Worker uses the CPU model only.** The GPU path in a worker was untested on real GPUs and could fail silently, which would look like "no face detected". Worker failures now surface as an error.
+* **Verified on a real face** (MediaPipe's test portrait as a looping fake webcam, two-state video): landmarks and blendshape features are sane (about 15-20 fps, 17-30 ms/frame on CPU); the wizard completes to "Tracking is ready"; the live label followed the camera with **0.40 s** onset delay (the 400 ms confirm dwell) and **0.15 s** exit delay. A static photo has no sensor noise, so its separation figure is not a real-world number, and it cannot show real eye movement.
+* **Bug: finishing a lesson discarded the result screen** (saving progress changed the exercise seed, regenerating the text). Seed is now fixed per visit.
+* **Identity**: Paper / Dusk / Moss themes (system light/dark on first run), serif typing text, pill navigation, one-row length selector with options folded away. Feature test (`22` checks across every page and mode) passes with zero console errors.

@@ -58,9 +58,9 @@ function Goals() {
 
 export default function Improve() {
   const { rec, loading, sessions } = useTraining()
-  if (loading) return <div className="mx-auto max-w-4xl px-6 py-10"><Spinner /></div>
+  if (loading) return <div className="mx-auto max-w-5xl px-6 py-10"><Spinner /></div>
   return (
-    <div className="mx-auto max-w-4xl px-6 py-10">
+    <div className="mx-auto max-w-5xl px-6 py-10">
       <PageHeader title="Coach" subtitle="What to work on next, ranked by how strongly your own data supports it." />
 
       <h2 className="mb-3 text-lg font-semibold text-white">Recommended for you</h2>

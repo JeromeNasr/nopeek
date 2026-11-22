@@ -35,10 +35,10 @@ function useEngineClock(engine, intervalMs) {
 function LiveHud({ engine, timeLimitMs, totalWords }) {
   const { live, wi, started } = useEngineClock(engine, 250)
   const remaining = timeLimitMs ? Math.max(0, Math.ceil((timeLimitMs - live.elapsedMs) / 1000)) : null
-  const label = 'text-[0.68rem] font-medium uppercase tracking-[0.14em] text-zinc-500'
-  const value = 'font-mono text-3xl font-medium tabular-nums'
+  const label = 'text-xs text-zinc-500'
+  const value = 'font-serif text-4xl font-medium tabular-nums'
   return (
-    <div className="flex items-end gap-7" aria-label="Live statistics">
+    <div className="flex items-end gap-8" aria-label="Live statistics">
       {timeLimitMs
         ? <div><p className={label}>time</p><p className={`${value} text-emerald-400`}>{started ? remaining : timeLimitMs / 1000}</p></div>
         : <div><p className={label}>words</p><p className={`${value} text-emerald-400`}>{wi}/{totalWords}</p></div>}
@@ -402,10 +402,10 @@ export default function SessionRunner({ makeRun, meta, lesson = null, showKeyboa
       </div>
 
       <div className="chrome mt-8 flex flex-wrap items-center justify-between gap-3 text-xs text-zinc-500">
-        <span><kbd>esc</kbd> restart <span className="mx-1.5 text-zinc-700">/</span> <kbd>ctrl</kbd> + <kbd>backspace</kbd> delete word</span>
+        <span><kbd>esc</kbd> restarts · <kbd>ctrl</kbd> <kbd>⌫</kbd> deletes a word</span>
         <span className="flex items-center gap-1">
           {metronome && <Button variant={metroOn ? 'secondary' : 'ghost'} size="sm" aria-pressed={metroOn} onClick={() => setMetroOn((v) => !v)}>{metroOn ? `metronome on · ${metroMs} ms` : 'metronome'}</Button>}
-          <Button variant="ghost" size="sm" onClick={restart}>restart</Button>
+          <Button variant="ghost" size="sm" onClick={restart}>Restart</Button>
         </span>
       </div>
 

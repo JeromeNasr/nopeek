@@ -28,39 +28,48 @@ const Setup = lazy(pages.setup)
 const Login = lazy(pages.login)
 
 const navLinks = [
-  { to: '/', label: 'type', key: 'test' },
-  { to: '/learn', label: 'learn', key: 'learn' },
-  { to: '/practice', label: 'practice', key: 'practice' },
-  { to: '/analyze', label: 'stats', key: 'analyze' },
-  { to: '/improve', label: 'coach', key: 'improve' },
+  { to: '/', label: 'Type', key: 'test' },
+  { to: '/learn', label: 'Learn', key: 'learn' },
+  { to: '/practice', label: 'Practice', key: 'practice' },
+  { to: '/analyze', label: 'Progress', key: 'analyze' },
+  { to: '/improve', label: 'Coach', key: 'improve' },
 ]
 
-const linkCls = ({ isActive }) =>
-  ['btn rounded-md px-2.5 py-1.5 text-sm', isActive ? 'text-emerald-400' : 'text-zinc-500 hover:text-zinc-100'].join(' ')
+const pillCls = ({ isActive }) =>
+  ['btn rounded-full px-3.5 py-1.5 text-sm', isActive ? 'bg-zinc-800 text-white' : 'text-zinc-500 hover:text-zinc-100'].join(' ')
 
 export function Logo() {
   return (
-    <span className="flex items-baseline font-mono text-[1.05rem] font-medium tracking-tight text-white">
-      touchtype<span className="ml-0.5 inline-block h-[1.05em] w-[2px] translate-y-[0.15em] bg-emerald-400" aria-hidden="true" />
+    <span className="font-serif text-[1.35rem] font-semibold leading-none tracking-tight text-white">
+      touchtype<span className="text-emerald-400">.</span>
     </span>
   )
 }
 
+function Icon({ d }) {
+  return <svg viewBox="0 0 24 24" className="h-[1.15rem] w-[1.15rem]" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={d} /></svg>
+}
+
 function Navbar() {
   const { user } = useAuth()
+  const iconCls = ({ isActive }) => ['btn flex h-9 w-9 items-center justify-center rounded-full', isActive ? 'bg-zinc-800 text-white' : 'text-zinc-500 hover:bg-zinc-900 hover:text-zinc-100'].join(' ')
   return (
     <header className="chrome">
-      <nav aria-label="Main" className="mx-auto flex max-w-5xl flex-wrap items-center justify-between gap-x-6 gap-y-2 px-6 py-5">
-        <NavLink to="/" aria-label="TouchType home" className="rounded-md"><Logo /></NavLink>
-        <ul className="order-3 -mx-2.5 flex w-full items-center gap-0.5 overflow-x-auto sm:order-none sm:mx-0 sm:w-auto sm:flex-1">
+      <nav aria-label="Main" className="mx-auto grid max-w-5xl grid-cols-[1fr_auto_1fr] items-center gap-y-3 px-6 py-5 max-sm:grid-cols-[1fr_auto]">
+        <NavLink to="/" aria-label="TouchType home" className="justify-self-start rounded-md"><Logo /></NavLink>
+        <ul className="flex items-center gap-0.5 rounded-full bg-zinc-900 p-1 max-sm:order-3 max-sm:col-span-2 max-sm:w-full max-sm:justify-between">
           {navLinks.map(({ to, label, key }) => (
-            <li key={to}><NavLink to={to} end={to === '/'} className={linkCls} onMouseEnter={pages[key]} onFocus={pages[key]}>{label}</NavLink></li>
+            <li key={to}><NavLink to={to} end={to === '/'} className={pillCls} onMouseEnter={pages[key]} onFocus={pages[key]}>{label}</NavLink></li>
           ))}
         </ul>
-        <div className="flex items-center gap-0.5">
-          <EyeStatus compact className="mr-1.5" />
-          <NavLink to="/setup" className={linkCls} onMouseEnter={pages.setup}>settings</NavLink>
-          <NavLink to="/login" className={linkCls} onMouseEnter={pages.login}>{user ? 'account' : 'sign in'}</NavLink>
+        <div className="flex items-center justify-self-end">
+          <EyeStatus compact className="mr-2" />
+          <NavLink to="/setup" className={iconCls} onMouseEnter={pages.setup} aria-label="Settings" title="Settings">
+            <Icon d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm7.4-2.5a7.7 7.7 0 0 0 0-1l2-1.6-2-3.4-2.4 1a7.6 7.6 0 0 0-1.7-1L15 3.5h-4l-.4 2.5a7.6 7.6 0 0 0-1.7 1l-2.4-1-2 3.4 2 1.6a7.7 7.7 0 0 0 0 1l-2 1.6 2 3.4 2.4-1c.5.4 1.1.7 1.7 1l.4 2.5h4l.4-2.5c.6-.3 1.2-.6 1.7-1l2.4 1 2-3.4-2-1.6Z" />
+          </NavLink>
+          <NavLink to="/login" className={iconCls} onMouseEnter={pages.login} aria-label={user ? 'Account' : 'Sign in'} title={user ? 'Account' : 'Sign in'}>
+            <Icon d="M20 21a8 8 0 1 0-16 0M12 13a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z" />
+          </NavLink>
         </div>
       </nav>
     </header>
@@ -106,7 +115,7 @@ function Shell() {
         </ErrorBoundary>
       </main>
       <footer className="chrome mx-auto flex w-full max-w-5xl flex-wrap justify-between gap-2 px-6 py-6 text-xs text-zinc-600">
-        <span>Camera video is processed on this device and never uploaded.</span>
+        <span>Your camera never leaves this device.</span>
         <span>Typing statistics by <a className="underline hover:text-zinc-400" href="https://github.com/monkeytypegame/monkeytype" target="_blank" rel="noreferrer">Monkeytype</a> (GPL-3.0) · <NavLink to="/setup" className="underline hover:text-zinc-400">settings</NavLink></span>
       </footer>
       {['/', '/practice'].includes(pathname) || pathname.startsWith('/learn/') ? <CameraThumb /> : null}

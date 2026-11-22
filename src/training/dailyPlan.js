@@ -39,7 +39,7 @@ export function buildDailyPlan({ sessions, rec, progress, now = new Date() }) {
     {
       id: 'benchmark', title: 'Benchmark test', minutes: 1,
       detail: 'A 30-second test so today has a number to compare with tomorrow.',
-      action: { type: 'route', to: '/test' },
+      action: { type: 'route', to: '/' },
       done: todays.some(isTest),
     },
   ]
