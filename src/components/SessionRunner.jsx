@@ -385,8 +385,9 @@ export default function SessionRunner({ makeRun, meta, lesson = null, showKeyboa
     <div className="mx-auto w-full max-w-4xl">
       <div className="mb-4 flex flex-wrap items-end justify-between gap-4">
         <LiveHud engine={engine} timeLimitMs={run.timeLimitMs} totalWords={totalWords} />
-        <div className="chrome flex flex-col items-end gap-1">
-          <EyeStatus actionable />
+        <div className="flex flex-col items-end gap-1">
+          <div className="chrome"><EyeStatus actionable /></div>
+          {/* outside the focus-mode chrome: the reminder must stay visible while typing */}
           <EyesUpHint />
         </div>
       </div>

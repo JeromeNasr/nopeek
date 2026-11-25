@@ -241,7 +241,7 @@ function DownPhase({ onDone, onCancel }) {
   ]
   return (
     <Overlay step="keyboard" title={phase === 'capture' ? 'Look at your keys…' : `Look at your keyboard · ${round + 1} of ${rounds}`} hint={phase === 'capture' ? 'Keep looking until the rising tone.' : prompts[round]} onCancel={onCancel}>
-      <div className="absolute inset-x-0 top-[44%] mx-auto flex max-w-sm flex-col items-center px-6 text-center">
+      <div className="absolute inset-x-0 top-[34%] mx-auto flex max-w-sm flex-col items-center px-6 text-center">
         {phase === 'ready' && (
           <>
             <p className="text-sm text-zinc-400">After the countdown you&apos;ll hear a <strong className="text-zinc-200">falling tone</strong>: look down at your keys. A <strong className="text-zinc-200">rising tone</strong> means look back up.</p>

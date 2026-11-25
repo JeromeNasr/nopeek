@@ -7,7 +7,7 @@ import { cx } from '../lib/cx.js'
 import { useTraining } from '../data/trainingContext.js'
 import { generateLessonWords } from '../training/generator.js'
 import { LESSON_BY_ID, STAGES, lessonsOfStage } from '../training/lessons.js'
-import { FINGERS, FINGER_ORDER, FINGER_OF_CODE, profileFingerOfCode } from '../training/keyboard.js'
+import { FINGERS, FINGER_ORDER, FINGER_OF_CODE, FORM_FACTORS, LAYOUTS, profileFingerOfCode } from '../training/keyboard.js'
 
 export default function Learn() {
   const { progress, loading, profile } = useTraining()
@@ -186,7 +186,7 @@ export function FingerGuide() {
       <Card className="mb-6">
         <FingerLegend focusFinger={focus} onFocus={setFocus} />
         <div className="mt-5"><Keyboard compact profile={profile} focusFinger={focus} /></div>
-        <p className="mt-4 text-xs text-zinc-500">Layout: {profile.layout}, {profile.physical.toUpperCase()}, {profile.formFactor}. Change these in <Link className="underline" to="/setup">Setup</Link>. The map follows the standard touch-typing assignment plus any per-key overrides you set.</p>
+        <p className="mt-4 text-xs text-zinc-500">Keyboard: {LAYOUTS[profile.layout]?.label ?? profile.layout}, {profile.physical.toUpperCase()}, {FORM_FACTORS[profile.formFactor]?.label ?? profile.formFactor}. Change it in <Link className="underline" to="/setup#keyboard">Settings</Link>. The map follows the standard touch-typing assignment plus any per-key overrides you set.</p>
       </Card>
       <div className="grid gap-4 sm:grid-cols-2">
         <Card>
