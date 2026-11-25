@@ -4,7 +4,7 @@ import { STATE } from './classifier.js'
 export function describeEye(eye) {
   const { settings, calibrated, runtime, live } = eye
   if (!settings.enabled) return { tone: 'off', text: 'Eye tracking off', detail: 'Tracking is switched off, so keyboard-looking is not measured.' }
-  if (!calibrated) return { tone: 'off', text: 'Not calibrated', detail: 'Calibrate eye tracking in Setup to measure keyboard-looking.' }
+  if (!calibrated) return { tone: 'off', text: 'Not calibrated', detail: 'Calibrate eye tracking in Settings to measure keyboard-looking.' }
   if (runtime.phase === 'error') return { tone: 'warn', text: 'Camera unavailable', detail: runtime.error?.message ?? 'The camera could not be used.' }
   if (runtime.phase !== 'running') return { tone: 'off', text: runtime.phase === 'starting' ? 'Starting camera…' : 'Camera idle', detail: '' }
   switch (live.state) {

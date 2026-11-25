@@ -90,8 +90,8 @@ export default function Test() {
   return (
     <div className="mx-auto max-w-4xl px-6 pb-16 pt-4 sm:pt-10">
       <div className="chrome mb-14 flex flex-col items-center gap-3" aria-label="Test options">
-        <div className="flex flex-wrap items-center justify-center gap-2">
-          <Seg label="Test length" value={lengthId} onChange={pickLength} options={lengthOptions} />
+        <div className="flex max-w-full flex-wrap items-center justify-center gap-2">
+          <Seg label="Test length" value={lengthId} onChange={pickLength} options={lengthOptions} wrap={false} />
           <button type="button" aria-expanded={showOptions} onClick={() => setShowOptions((v) => !v)}
             className={cx('btn flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm', showOptions || nonDefault ? 'bg-zinc-900 text-emerald-400' : 'text-zinc-500 hover:text-zinc-100')}>
             options

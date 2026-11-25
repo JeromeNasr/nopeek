@@ -36,7 +36,7 @@ const navLinks = [
 ]
 
 const pillCls = ({ isActive }) =>
-  ['btn rounded-full px-3.5 py-1.5 text-sm', isActive ? 'bg-zinc-800 text-white' : 'text-zinc-500 hover:text-zinc-100'].join(' ')
+  ['btn block rounded-full px-3.5 py-1.5 text-sm max-sm:px-2.5', isActive ? 'bg-zinc-800 text-white' : 'text-zinc-500 hover:text-zinc-100'].join(' ')
 
 export function Logo() {
   return (
@@ -63,7 +63,7 @@ function Navbar() {
           ))}
         </ul>
         <div className="flex items-center justify-self-end">
-          <EyeStatus compact className="mr-2" />
+          <EyeStatus compact hideWhenOff className="mr-2" />
           <NavLink to="/setup" className={iconCls} onMouseEnter={pages.setup} aria-label="Settings" title="Settings">
             <Icon d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm7.4-2.5a7.7 7.7 0 0 0 0-1l2-1.6-2-3.4-2.4 1a7.6 7.6 0 0 0-1.7-1L15 3.5h-4l-.4 2.5a7.6 7.6 0 0 0-1.7 1l-2.4-1-2 3.4 2 1.6a7.7 7.7 0 0 0 0 1l-2 1.6 2 3.4 2.4-1c.5.4 1.1.7 1.7 1l.4 2.5h4l.4-2.5c.6-.3 1.2-.6 1.7-1l2.4 1 2-3.4-2-1.6Z" />
           </NavLink>

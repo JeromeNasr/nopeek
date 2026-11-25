@@ -1,25 +1,41 @@
-// Personal calibration: learns what "looking at my screen" and "looking down at
-// my keyboard" look like for THIS user, camera and posture, and measures how well
-// separated the two are.
+// Personal calibration: learns what "looking at my screen" and "looking down at my
+// keyboard" look like for THIS user, camera and posture, and measures how well the
+// two are separated.
 //
-// v3: the discriminant is a regularised Fisher LDA over the available signals
-// (head pitch, iris offset, iris-between-lids, learned eye-look-down blendshape),
-// so correlated signals are not double counted. Quality is CROSS-VALIDATED:
-// each capture segment is held out in turn, the model is refit on the rest and
-// scored on the unseen segment. If the two looks overlap, the calibration is
-// reported as insufficient and never used for scoring.
+// v5
+//  * Signals: head pitch, iris position (relative to the eye corners and to the
+//    lids), upper-lid height, eye opening, and MediaPipe's learned eye-look-down and
+//    blink scores. With a webcam above the screen, the eyelids are among the
+//    strongest cues for a downward look, so they are evidence here, not noise.
+//  * A regularised Fisher LDA combines them into one score t (0 = screen, 1 = keyboard)
+//    without double counting correlated signals. Distinct ways of peeking (head tilt,
+//    eyes only…) each get their own prototype.
+//  * The score distributions of both looks are fitted (robust Student-t), which turns
+//    every frame into a log-likelihood ratio for the temporal filter in classifier.js.
+//  * Quality is CROSS-VALIDATED on held-out capture steps. A calibration that only
+//    looks good on its own data is not trusted.
 
 import { median } from '../engine/stats.js'
 
-export const DISCRIMINATIVE = ['pitch', 'gazeV', 'gazeLid', 'lookDown']
-export const CONTEXT = ['yaw', 'gazeH', 'roll', 'openness', 'faceWidth', 'blink']
-const SD_FLOOR = { pitch: 0.7, gazeV: 0.003, gazeLid: 0.015, lookDown: 0.02, yaw: 1.0, gazeH: 0.004, roll: 0.8, openness: 0.01, faceWidth: 0.003, blink: 0.02 }
-const MIN_SNR = 1.2
-const SHRINKAGE = 0.2
+export const SIGNALS = ['pitch', 'gazeV', 'gazeLid', 'lidTop', 'openness', 'lookDown', 'blink']
+/** @deprecated name kept for older imports */
+export const DISCRIMINATIVE = SIGNALS
+export const CONTEXT = ['yaw', 'gazeH', 'roll', 'faceWidth']
+const SD_FLOOR = {
+  pitch: 0.6, gazeV: 0.003, gazeLid: 0.015, lidTop: 0.005, openness: 0.008, lookDown: 0.02, blink: 0.02,
+  yaw: 1.0, gazeH: 0.004, roll: 0.8, faceWidth: 0.003,
+}
+const MIN_SNR = 1.0
+const SHRINKAGE = 0.25
 export const MIN_SAMPLES = 40
-export const PROFILE_VERSION = 3
-export const T_ENTER = 0.7
-export const T_EXIT = 0.45
+export const PROFILE_VERSION = 5
+// emission model: real typing is less tidy than calibration, so both score
+// distributions are widened, and real peeks are often shallower than the requested one
+export const SCREEN_WIDEN = 1.6
+export const KEY_WIDEN = 1.3
+export const KEY_DEPTH = 0.9
+const DOF = 4
+export const LLR_CLAMP = 3
 
 /** Median and robust SD (1.4826·MAD), after trimming gross outliers. */
 export function robustStats(values, floor = 0) {
@@ -33,11 +49,11 @@ export function robustStats(values, floor = 0) {
   return { median: med, sd: Math.max(mad2, floor), n: keep.length }
 }
 
-/** Drop blinks and frames with a bad landmark fit before calibrating. */
+/** Drop blinks (relative to the same capture) and frames with a broken landmark fit. */
 export function cleanSamples(samples) {
   const open = median(samples.filter((s) => s && s.openness != null).map((s) => s.openness))
   return samples.filter(
-    (s) => s && (s.openness == null || open === 0 || s.openness >= open * 0.6) && (s.eyeDisagreement ?? 0) < 0.12,
+    (s) => s && (s.openness == null || open === 0 || s.openness >= open * 0.6) && (s.eyeDisagreement ?? 0) < 0.2,
   )
 }
 
@@ -45,22 +61,22 @@ export function cleanSamples(samples) {
 export function preflight(features, brightness = null) {
   const issues = []
   if (!features) return [{ id: 'no-face', severity: 'error', message: 'No face found. Face the camera and make sure the lens is uncovered.' }]
-  // Only a missing face blocks calibration. Everything else is advice: the calibration
-  // quality check afterwards is what decides whether tracking can be trusted.
-  if (features.faceWidth < 0.1) issues.push({ id: 'too-far', severity: 'error', message: 'Your face is tiny in the frame. Move much closer to the camera.' })
-  else if (features.faceWidth < 0.17) issues.push({ id: 'too-far', severity: 'warn', message: 'Move a little closer – the eyes are small, so tracking will be less steady.' })
-  else if (features.faceWidth > 0.65) issues.push({ id: 'too-close', severity: 'warn', message: 'You are very close to the camera – sit back a little.' })
-  if (features.marginFrac < 0.03) issues.push({ id: 'off-center', severity: 'warn', message: 'Part of your face is at the edge of the frame. Centre yourself.' })
-  if (brightness != null && brightness < 55) issues.push({ id: 'dark', severity: 'warn', message: 'It is quite dark. A lamp in front of you (not behind) helps a lot.' })
-  if (brightness != null && brightness > 225) issues.push({ id: 'bright', severity: 'warn', message: 'The image is washed out – reduce glare or backlighting.' })
-  if (features.roll != null && Math.abs(features.roll) > 18) issues.push({ id: 'tilted', severity: 'warn', message: 'Your head is tilted – straighten up.' })
-  if (features.openness != null && features.openness < 0.1) issues.push({ id: 'eyes-closed', severity: 'warn', message: 'Your eyes look closed or squinting. Glasses glare can cause this.' })
+  // Only a missing (or unusably tiny) face blocks calibration. Everything else is advice:
+  // the cross-validated quality check afterwards decides whether tracking can be trusted.
+  if (features.faceWidth < 0.06) issues.push({ id: 'too-far', severity: 'error', message: 'Your face is tiny in the frame. Move much closer to the camera.' })
+  else if (features.faceWidth < 0.1) issues.push({ id: 'too-far', severity: 'warn', message: 'You are quite far from the camera. Moving a little closer makes tracking steadier.' })
+  else if (features.faceWidth > 0.7) issues.push({ id: 'too-close', severity: 'warn', message: 'You are very close to the camera – sit back a little.' })
+  if (features.marginFrac < 0.01) issues.push({ id: 'off-center', severity: 'warn', message: 'Part of your face is at the edge of the frame. Centre yourself.' })
+  if (brightness != null && brightness < 45) issues.push({ id: 'dark', severity: 'warn', message: 'It is quite dark. A lamp in front of you (not behind) helps a lot.' })
+  if (brightness != null && brightness > 230) issues.push({ id: 'bright', severity: 'warn', message: 'The image is washed out – reduce glare or backlighting.' })
+  if (features.roll != null && Math.abs(features.roll) > 20) issues.push({ id: 'tilted', severity: 'warn', message: 'Your head is tilted – straighten up.' })
+  if (features.openness != null && features.openness < 0.08) issues.push({ id: 'eyes-closed', severity: 'warn', message: 'Your eyes look closed. Look at the screen with your eyes relaxed (glasses glare can also cause this).' })
   return issues
 }
 
 function classStats(samples) {
   const out = {}
-  for (const k of [...DISCRIMINATIVE, ...CONTEXT]) {
+  for (const k of [...SIGNALS, ...CONTEXT]) {
     const vals = samples.map((s) => s[k]).filter((x) => Number.isFinite(x))
     out[k] = vals.length >= 3 ? robustStats(vals, SD_FLOOR[k]) : null
   }
@@ -94,7 +110,10 @@ function ldaWeights(axes, s, d, sStats, dStats) {
       const row = []
       for (const a of axes) {
         const x = f[a.feature]
-        if (!Number.isFinite(x)) { row.length = 0; break }
+        if (!Number.isFinite(x)) {
+          row.length = 0
+          break
+        }
         // winsorise so a few wild frames cannot dominate the covariance
         row.push(Math.max(-4, Math.min(4, (x - stats[a.feature].median) / a.scale)))
       }
@@ -164,57 +183,43 @@ export function projectScore(profile, f, offset = null) {
   return best
 }
 
-const quantile = (sorted, q) => sorted[Math.min(sorted.length - 1, Math.max(0, Math.floor(q * (sorted.length - 1))))]
-
-/** Do two keyboard captures look like different ways of peeking? */
-function distinctStyles(a, b) {
-  for (const k of DISCRIMINATIVE) {
-    if (!a.down[k] || !b.down[k]) continue
-    const gap = Math.abs(a.down[k].median - b.down[k].median)
-    const scale = Math.sqrt((a.down[k].sd ** 2 + b.down[k].sd ** 2) / 2)
-    if (gap / scale > 2.5) return true
-  }
-  return false
-}
-
-/** Pooled model plus one prototype per distinct keyboard-look style. */
-function fitFull(s, d, dSegs = []) {
-  const model = fit(s, d)
-  const protos = []
-  if (model.axes.length && dSegs.length >= 2) {
-    const fits = dSegs.filter((seg) => seg.length >= 15).map((seg) => fit(s, seg)).filter((m) => m.axes.length)
-    const kept = []
-    for (const m of fits) if (!kept.some((k) => !distinctStyles(k, m))) kept.push(m)
-    if (kept.length >= 2) for (const m of kept.slice(0, 4)) protos.push({ axes: m.axes, down: m.down })
-  }
-  return { ...model, protos }
+/** log density of a Student-t (location m, scale s, dof v), up to a constant shared by both classes. */
+export function studentLogPdf(x, m, s, v = DOF) {
+  const z = (x - m) / s
+  return -((v + 1) / 2) * Math.log(1 + (z * z) / v) - Math.log(s)
 }
 
 /**
- * Personal decision thresholds: placed between this user's own screen scores and
- * keyboard scores instead of using one fixed number for everybody.
+ * Evidence for "keyboard" over "screen" carried by one projected score:
+ * log p(t | keyboard) − log p(t | screen), clamped so no single frame can decide alone.
  */
-function chooseThresholds(ts, td) {
-  if (ts.length < 20 || td.length < 20) return { enter: T_ENTER, exit: T_EXIT }
-  const a = [...ts].sort((x, y) => x - y)
-  const b = [...td].sort((x, y) => x - y)
-  const hiScreen = quantile(a, 0.99)
-  const loDown = quantile(b, 0.1)
-  // Only personalise when the two clusters are clearly apart; otherwise keep the
-  // conservative defaults so a marginal calibration is not flattered by its own thresholds.
-  if (loDown - hiScreen < 0.3) return { enter: T_ENTER, exit: T_EXIT }
-  let enter = (hiScreen + loDown) / 2
-  enter = Math.max(enter, hiScreen + 0.15)
-  enter = Math.min(0.82, Math.max(0.58, enter))
-  const exit = Math.min(0.6, Math.max(0.35, enter - 0.22))
-  return { enter: Math.round(enter * 100) / 100, exit: Math.round(exit * 100) / 100 }
+export function frameLLR(profile, t, tOffset = 0) {
+  const e = profile.emission
+  if (!e || t == null) return null
+  const x = t - tOffset
+  const ls = studentLogPdf(x, e.s.mu, e.s.sd * SCREEN_WIDEN)
+  const lk = studentLogPdf(x, e.k.mu * KEY_DEPTH, e.k.sd * KEY_WIDEN)
+  return Math.max(-LLR_CLAMP, Math.min(LLR_CLAMP, lk - ls))
+}
+
+/** The score at which a frame is equally likely to be screen or keyboard (for display). */
+export function decisionPoint(profile) {
+  if (!profile?.emission) return 0.5
+  let lo = profile.emission.s.mu
+  let hi = profile.emission.k.mu * KEY_DEPTH
+  for (let i = 0; i < 40; i++) {
+    const mid = (lo + hi) / 2
+    if (frameLLR(profile, mid) > 0) hi = mid
+    else lo = mid
+  }
+  return Math.round(((lo + hi) / 2) * 100) / 100
 }
 
 function fit(s, d) {
   const screenStats = classStats(s)
   const downStats = classStats(d)
   const axes = []
-  for (const feature of DISCRIMINATIVE) {
+  for (const feature of SIGNALS) {
     const a = screenStats[feature]
     const b = downStats[feature]
     if (!a || !b) continue
@@ -230,10 +235,63 @@ function fit(s, d) {
   return { screen: screenStats, down: downStats, axes }
 }
 
-function rates(model, s, d, th = { enter: T_ENTER, exit: T_EXIT }) {
+/** Do two keyboard captures look like different ways of peeking? */
+function distinctStyles(a, b) {
+  for (const k of SIGNALS) {
+    if (!a.down[k] || !b.down[k]) continue
+    const gap = Math.abs(a.down[k].median - b.down[k].median)
+    const scale = Math.sqrt((a.down[k].sd ** 2 + b.down[k].sd ** 2) / 2)
+    if (gap / scale > 2.5) return true
+  }
+  return false
+}
+
+/** Fit emission distributions to the projected scores of each class. */
+function emissionFor(model, s, d) {
   const ts = s.map((f) => projectScore(model, f).t).filter((x) => x != null)
   const td = d.map((f) => projectScore(model, f).t).filter((x) => x != null)
-  return { ts, td, fp: ts.filter((x) => x > th.enter).length, fn: td.filter((x) => x < th.exit).length }
+  const rs = robustStats(ts, 0.07)
+  const rk = robustStats(td, 0.1)
+  return { s: { mu: rs.median, sd: rs.sd }, k: { mu: Math.max(rk.median, rs.median + 0.3), sd: rk.sd }, ts, td }
+}
+
+/** Pooled model plus one prototype per distinct keyboard-look style, with its emission model. */
+function fitFull(s, d, dSegs = []) {
+  const model = fit(s, d)
+  const protos = []
+  if (model.axes.length && dSegs.length >= 2) {
+    const fits = dSegs.filter((seg) => seg.length >= 15).map((seg) => fit(s, seg)).filter((m) => m.axes.length)
+    const kept = []
+    for (const m of fits) if (!kept.some((k) => !distinctStyles(k, m))) kept.push(m)
+    if (kept.length >= 2) for (const m of kept.slice(0, 4)) protos.push({ axes: m.axes, down: m.down })
+  }
+  const full = { ...model, protos }
+  if (model.axes.length) {
+    const { s: es, k: ek } = emissionFor(full, s, d)
+    full.emission = { s: es, k: ek }
+  }
+  return full
+}
+
+/** Fraction of frames the per-frame evidence would assign to the wrong look. */
+function frameErrors(model, s, d) {
+  let fp = 0
+  let nS = 0
+  for (const f of s) {
+    const t = projectScore(model, f).t
+    if (t == null) continue
+    nS++
+    if (frameLLR(model, t) > 0) fp++
+  }
+  let fn = 0
+  let nD = 0
+  for (const f of d) {
+    const t = projectScore(model, f).t
+    if (t == null) continue
+    nD++
+    if (frameLLR(model, t) < 0) fn++
+  }
+  return { fp, nS, fn, nD }
 }
 
 /**
@@ -259,7 +317,7 @@ export function buildProfile({ screen, down, brightness = null, screenSegments =
       ok: false,
       quality: {
         level: 'insufficient',
-        issues: [{ id: 'few-samples', severity: 'error', message: 'Not enough clear frames were captured. Keep your face in view and your eyes open during each step.' }],
+        issues: [{ id: 'few-samples', severity: 'error', message: 'Not enough clear frames were captured. Keep your face in view and your eyes on the target during each step.' }],
       },
     }
   }
@@ -267,7 +325,7 @@ export function buildProfile({ screen, down, brightness = null, screenSegments =
   const dSegAll = (downSegments ?? []).map(cleanSamples)
   const model = fitFull(s, d, dSegAll)
   const profile = { ...base, ...model }
-  if (model.axes.length === 0) {
+  if (model.axes.length === 0 || !model.emission) {
     return {
       ...profile,
       ok: false,
@@ -278,7 +336,7 @@ export function buildProfile({ screen, down, brightness = null, screenSegments =
             id: 'no-separation',
             severity: 'error',
             message:
-              'Looking at the screen and looking at the keyboard produced almost the same measurements. Raise the camera to the top of the screen, sit so your face fills about a third of the frame, and look clearly down at the keys during the keyboard step.',
+              'Looking at the screen and looking at the keyboard produced almost the same measurements. Put the camera at the top of the screen, sit so your whole face is visible, and look clearly down at the keys when you hear the beep.',
           },
           ...preflightFromStats(model.screen, brightness),
         ],
@@ -286,27 +344,19 @@ export function buildProfile({ screen, down, brightness = null, screenSegments =
     }
   }
 
-  // In-sample separation of the projected scores
-  const first = rates(profile, s, d)
-  const thresholds = chooseThresholds(first.ts, first.td)
-  profile.thresholds = thresholds
-  const ins = rates(profile, s, d, thresholds)
-  const mean = (a) => a.reduce((x, y) => x + y, 0) / a.length
-  const sd = (a) => {
-    const m = mean(a)
-    return Math.sqrt(a.reduce((x, y) => x + (y - m) ** 2, 0) / a.length)
-  }
-  const pooledT = Math.sqrt((sd(ins.ts) ** 2 + sd(ins.td) ** 2) / 2) || 1e-6
-  const dPrime = (mean(ins.td) - mean(ins.ts)) / pooledT
-  let falsePositive = ins.fp / ins.ts.length
-  let falseNegative = ins.fn / ins.td.length
+  // separation of the projected scores
+  const { s: es, k: ek } = model.emission
+  const dPrime = (ek.mu - es.mu) / Math.sqrt((es.sd ** 2 + ek.sd ** 2) / 2)
+  const ins = frameErrors(profile, s, d)
+  let falsePositive = ins.fp / Math.max(1, ins.nS)
+  let falseNegative = ins.fn / Math.max(1, ins.nD)
 
   // Leave-one-segment-out cross-validation: an honest, out-of-sample estimate
   let validated = false
   let cvFalsePositive = null
   let cvFalseNegative = null
   const sSeg = (screenSegments ?? []).map(cleanSamples).filter((x) => x.length >= 8)
-  const dSeg = (downSegments ?? []).map(cleanSamples).filter((x) => x.length >= 8)
+  const dSeg = dSegAll.filter((x) => x.length >= 8)
   if (sSeg.length >= 2 && dSeg.length >= 2) {
     let fp = 0
     let nS = 0
@@ -316,32 +366,44 @@ export function buildProfile({ screen, down, brightness = null, screenSegments =
       const train = sSeg.filter((_, j) => j !== i).flat()
       if (train.length < MIN_SAMPLES / 2) continue
       const m = fitFull(train, d, dSegAll)
-      if (!m.axes.length) { fp += sSeg[i].length; nS += sSeg[i].length; continue }
-      const r = rates(m, sSeg[i], [], thresholds)
+      if (!m.emission) {
+        fp += sSeg[i].length
+        nS += sSeg[i].length
+        continue
+      }
+      const r = frameErrors(m, sSeg[i], [])
       fp += r.fp
-      nS += r.ts.length
+      nS += r.nS
     }
     if (model.protos.length >= 2) {
       // Distinct peeking styles were each captured once, so holding a whole capture out
-      // would test a style the model never saw. Hold out alternating halves of every capture instead.
+      // would test a style the model never saw. Hold out alternating slices of every capture instead.
       for (const half of [0, 1]) {
         const trainSegs = dSeg.map((seg) => seg.filter((_, k) => (k >> 2) % 2 !== half))
         const testSet = dSeg.flatMap((seg) => seg.filter((_, k) => (k >> 2) % 2 === half))
         const m = fitFull(s, trainSegs.flat(), trainSegs)
-        if (!m.axes.length) { fn += testSet.length; nD += testSet.length; continue }
-        const r = rates(m, [], testSet, thresholds)
+        if (!m.emission) {
+          fn += testSet.length
+          nD += testSet.length
+          continue
+        }
+        const r = frameErrors(m, [], testSet)
         fn += r.fn
-        nD += r.td.length
+        nD += r.nD
       }
     } else {
       for (let i = 0; i < dSeg.length; i++) {
         const train = dSeg.filter((_, j) => j !== i).flat()
         if (train.length < MIN_SAMPLES / 2) continue
-        const m = fit(s, train)
-        if (!m.axes.length) { fn += dSeg[i].length; nD += dSeg[i].length; continue }
-        const r = rates(m, [], dSeg[i], thresholds)
+        const m = fitFull(s, train)
+        if (!m.emission) {
+          fn += dSeg[i].length
+          nD += dSeg[i].length
+          continue
+        }
+        const r = frameErrors(m, [], dSeg[i])
         fn += r.fn
-        nD += r.td.length
+        nD += r.nD
       }
     }
     if (nS > 0 && nD > 0) {
@@ -353,19 +415,20 @@ export function buildProfile({ screen, down, brightness = null, screenSegments =
     }
   }
 
+  // Frame-level error rates. The temporal filter needs several consistent frames to
+  // switch state, so moderate frame error rates still give reliable peek detection.
   let level = 'insufficient'
-  if (dPrime >= 3 && falsePositive <= 0.02 && falseNegative <= 0.06) level = 'good'
-  else if (dPrime >= 2 && falsePositive <= 0.06 && falseNegative <= 0.15) level = 'fair'
-  else if (dPrime >= 1.4 && falsePositive <= 0.12 && falseNegative <= 0.3) level = 'poor'
+  if (dPrime >= 2.5 && falsePositive <= 0.04 && falseNegative <= 0.12) level = 'good'
+  else if (dPrime >= 1.6 && falsePositive <= 0.1 && falseNegative <= 0.25) level = 'fair'
+  else if (dPrime >= 1.1 && falsePositive <= 0.2 && falseNegative <= 0.4) level = 'poor'
 
   const qIssues = preflightFromStats(model.screen, brightness)
-  const label = { pitch: 'head pitch', gazeV: 'iris position', gazeLid: 'iris position', lookDown: 'eye direction' }
-  if (model.axes.length === 1) qIssues.push({ id: 'single-signal', severity: 'info', message: `Only ${label[model.axes[0].feature]} separates screen from keyboard for you, so tracking relies on a single signal and is less robust to natural head movement.` })
-  if (level === 'poor') qIssues.push({ id: 'overlap', severity: 'warn', message: 'Screen and keyboard readings overlap noticeably. Expect missed or false detections; try raising the camera or improving lighting, then recalibrate.' })
-  if (level === 'insufficient') qIssues.push({ id: 'overlap', severity: 'error', message: 'Screen and keyboard readings overlap too much to classify reliably. Tracking will not be used for scoring.' })
+  if (level === 'poor') qIssues.push({ id: 'overlap', severity: 'warn', message: 'Screen and keyboard readings overlap noticeably. Look down more clearly at the keys during the keyboard step, or raise the camera, then try again.' })
+  if (level === 'insufficient') qIssues.push({ id: 'overlap', severity: 'error', message: 'Screen and keyboard readings overlap too much to tell apart. Tracking will not be used for scoring.' })
 
   const r3 = (v) => (v == null ? null : Math.round(v * 1000) / 1000)
-  return {
+  const usedSignals = [...new Set([...model.axes, ...model.protos.flatMap((p) => p.axes)].map((a) => a.feature))]
+  const full = {
     ...profile,
     // 'poor' is reported honestly but is not used to score sessions
     ok: level === 'good' || level === 'fair',
@@ -378,33 +441,33 @@ export function buildProfile({ screen, down, brightness = null, screenSegments =
       falseNegative: r3(falseNegative),
       cvFalsePositive: r3(cvFalsePositive),
       cvFalseNegative: r3(cvFalseNegative),
-      signals: [...new Set([...model.axes, ...model.protos.flatMap((p) => p.axes)].map((a) => a.feature))],
+      signals: usedSignals,
       styles: Math.max(1, model.protos.length),
-      thresholds,
       issues: qIssues,
     },
   }
+  full.thresholds = { enter: decisionPoint(full), exit: decisionPoint(full) }
+  return full
 }
 
 function preflightFromStats(stats, brightness) {
   const out = []
-  if (stats.faceWidth && stats.faceWidth.median < 0.2) out.push({ id: 'too-far', severity: 'warn', message: 'You were far from the camera; eye landmarks are small and noisy. Sit closer.' })
-  if (stats.yaw && Math.abs(stats.yaw.sd) > 9) out.push({ id: 'unstable-head', severity: 'warn', message: 'Your head moved a lot while looking at the screen. Keep still during calibration.' })
-  if (stats.openness && stats.openness.median < 0.14) out.push({ id: 'narrow-eyes', severity: 'info', message: 'Your eyes appear quite narrow to the camera (glasses, glare or low camera angle). Detection may be less certain.' })
-  if (brightness != null && brightness < 55) out.push({ id: 'dark', severity: 'warn', message: 'Lighting was dim during calibration.' })
+  if (stats.faceWidth && stats.faceWidth.median < 0.1) out.push({ id: 'too-far', severity: 'info', message: 'You were fairly far from the camera; sitting a little closer gives steadier eye readings.' })
+  if (stats.yaw && Math.abs(stats.yaw.sd) > 9) out.push({ id: 'unstable-head', severity: 'info', message: 'Your head moved a lot while following the dots. Keep your head natural and move mainly your eyes.' })
+  if (brightness != null && brightness < 45) out.push({ id: 'dark', severity: 'info', message: 'Lighting was dim during calibration; more light in front of you helps.' })
   return out
 }
 
 export function describeLevel(level) {
   return {
     good: 'Good – screen and keyboard are clearly distinguishable.',
-    fair: 'Fair – usable, with occasional uncertain frames.',
-    poor: 'Poor – tracking would often be wrong, so it is not used for scoring. Improve camera position or lighting and recalibrate.',
-    insufficient: 'Insufficient – tracking cannot reliably tell screen from keyboard on this setup.',
+    fair: 'Fair – usable; a few looks may be detected a moment late.',
+    poor: 'Poor – it would often be wrong, so it is not used for scoring. Try the keyboard step again, looking down more clearly.',
+    insufficient: 'Insufficient – it cannot tell screen from keyboard on this setup yet.',
   }[level]
 }
 
 /** Is a stored profile usable for scoring? */
 export function profileUsable(profile) {
-  return !!profile && profile.version === PROFILE_VERSION && profile.ok && (profile.quality.level === 'good' || profile.quality.level === 'fair')
+  return !!profile && profile.version === PROFILE_VERSION && profile.ok && !!profile.emission && (profile.quality.level === 'good' || profile.quality.level === 'fair')
 }

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { getSupabase } from '../supabaseClient'
 import { useAuth } from '../data/useAuth'
+import { Button, Notice, Seg } from '../components/ui.jsx'
 
 export default function Login() {
   const navigate = useNavigate()
@@ -59,114 +60,41 @@ export default function Login() {
 
   if (user) {
     return (
-      <div className="mx-auto flex max-w-md flex-col px-6 py-16">
-        <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-8">
-          <h1 className="text-2xl font-semibold tracking-tight text-white">You&apos;re signed in</h1>
-          <p className="mt-2 text-sm text-zinc-400">{user.email}</p>
-          <p className="mt-2 text-sm text-zinc-500">Sessions and your keyboard setup sync to your account. Eye-tracking calibration and the camera stay on this device.</p>
-          <div className="mt-6 flex gap-3">
-            <button type="button" onClick={() => navigate('/analyze')} className="rounded-lg bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-zinc-950 hover:bg-emerald-400">View analytics</button>
-            <button type="button" onClick={async () => { const supabase = await getSupabase(); await supabase.auth.signOut(); navigate('/') }} className="rounded-lg border border-zinc-700 px-4 py-2.5 text-sm text-zinc-300 hover:border-zinc-500">Sign out</button>
-          </div>
+      <div className="mx-auto max-w-sm px-6 py-16">
+        <h1 className="text-4xl font-medium tracking-tight text-white">Your account</h1>
+        <p className="mt-2 text-zinc-300">{user.email}</p>
+        <p className="mt-3 text-sm text-zinc-500">Sessions and your keyboard setup sync to this account. Eye-tracking calibration and the camera stay on this device.</p>
+        <div className="mt-8 flex gap-3">
+          <Button onClick={() => navigate('/analyze')}>View progress</Button>
+          <Button variant="ghost" onClick={async () => { const supabase = await getSupabase(); await supabase?.auth.signOut(); navigate('/') }}>Sign out</Button>
         </div>
       </div>
     )
   }
 
+  const field = 'mt-1.5 w-full rounded-lg border border-zinc-800 bg-zinc-900 px-3 py-2.5 text-white placeholder-zinc-600 outline-none transition-colors focus:border-emerald-500'
   return (
-    <div className="mx-auto flex max-w-md flex-col px-6 py-16">
-      <div className="rounded-lg border border-zinc-800 bg-zinc-900 p-8 shadow-xl shadow-black/20">
-        <h1 className="text-2xl font-semibold tracking-tight text-white">
-          {isSignIn ? 'Welcome back' : 'Create an account'}
-        </h1>
-        <p className="mt-2 text-sm text-zinc-400">
-          {isSignIn
-            ? 'Sign in to sync your progress across devices.'
-            : 'Sign up to keep your sessions and keyboard setup across devices.'}
-        </p>
+    <div className="mx-auto max-w-sm px-6 py-16">
+      <h1 className="text-4xl font-medium tracking-tight text-white">{isSignIn ? 'Sign in' : 'Create an account'}</h1>
+      <p className="mt-2 text-sm text-zinc-400">
+        {isSignIn ? 'Sync your progress across devices. You can also use TouchType without an account – everything is saved on this device.' : 'Keep your sessions and keyboard setup across devices.'}
+      </p>
 
-        <div className="mt-6 flex rounded-lg bg-zinc-950 p-1">
-          <button
-            type="button"
-            onClick={() => switchMode('signin')}
-            className={[
-              'flex-1 rounded-md px-3 py-2 text-sm font-medium transition',
-              isSignIn
-                ? 'bg-zinc-800 text-white shadow-sm'
-                : 'text-zinc-400 hover:text-zinc-200',
-            ].join(' ')}
-          >
-            Sign in
-          </button>
-          <button
-            type="button"
-            onClick={() => switchMode('signup')}
-            className={[
-              'flex-1 rounded-md px-3 py-2 text-sm font-medium transition',
-              !isSignIn
-                ? 'bg-zinc-800 text-white shadow-sm'
-                : 'text-zinc-400 hover:text-zinc-200',
-            ].join(' ')}
-          >
-            Sign up
-          </button>
+      <div className="mt-8"><Seg label="Account action" value={mode} onChange={switchMode} options={[{ id: 'signin', label: 'Sign in' }, { id: 'signup', label: 'Sign up' }]} /></div>
+
+      <form onSubmit={handleSubmit} className="mt-6 space-y-4">
+        <div>
+          <label htmlFor="email" className="block text-sm text-zinc-400">Email</label>
+          <input id="email" type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} className={field} placeholder="you@example.com" />
         </div>
-
-        <form onSubmit={handleSubmit} className="mt-6 space-y-4">
-          <div>
-            <label htmlFor="email" className="block text-sm font-medium text-zinc-300">
-              Email
-            </label>
-            <input
-              id="email"
-              type="email"
-              autoComplete="email"
-              required
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              className="mt-1.5 w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2.5 text-white placeholder-zinc-500 outline-none transition focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
-              placeholder="you@example.com"
-            />
-          </div>
-
-          <div>
-            <label htmlFor="password" className="block text-sm font-medium text-zinc-300">
-              Password
-            </label>
-            <input
-              id="password"
-              type="password"
-              autoComplete={isSignIn ? 'current-password' : 'new-password'}
-              required
-              minLength={6}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              className="mt-1.5 w-full rounded-lg border border-zinc-700 bg-zinc-950 px-3 py-2.5 text-white placeholder-zinc-500 outline-none transition focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500"
-              placeholder="••••••••"
-            />
-          </div>
-
-          {error && (
-            <p className="rounded-lg border border-red-900/50 bg-red-950/50 px-3 py-2 text-sm text-red-400">
-              {error}
-            </p>
-          )}
-
-          {message && (
-            <p className="rounded-lg border border-emerald-900/50 bg-emerald-950/50 px-3 py-2 text-sm text-emerald-400">
-              {message}
-            </p>
-          )}
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full rounded-lg bg-emerald-500 px-4 py-2.5 text-sm font-semibold text-zinc-950 transition hover:bg-emerald-400 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {loading ? 'Please wait…' : isSignIn ? 'Sign in' : 'Create account'}
-          </button>
-        </form>
-      </div>
+        <div>
+          <label htmlFor="password" className="block text-sm text-zinc-400">Password</label>
+          <input id="password" type="password" autoComplete={isSignIn ? 'current-password' : 'new-password'} required minLength={6} value={password} onChange={(e) => setPassword(e.target.value)} className={field} placeholder={isSignIn ? '' : 'at least 6 characters'} />
+        </div>
+        {error && <Notice tone="bad">{error}</Notice>}
+        {message && <Notice tone="good">{message}</Notice>}
+        <Button type="submit" size="lg" className="w-full" disabled={loading}>{loading ? 'Please wait…' : isSignIn ? 'Sign in' : 'Create account'}</Button>
+      </form>
     </div>
   )
 }

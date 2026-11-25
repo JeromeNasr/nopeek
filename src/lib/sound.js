@@ -56,3 +56,46 @@ export function playKey(style, ok = true) {
 export function playTick(accent = false) {
   tone(accent ? 1320 : 880, 0.05, 0.04)
 }
+
+function note(freq, at, dur, gain) {
+  const c = ensure()
+  if (!c) return
+  const o = c.createOscillator()
+  const g = c.createGain()
+  o.type = 'sine'
+  o.frequency.value = freq
+  const t0 = c.currentTime + at
+  g.gain.setValueAtTime(0.0001, t0)
+  g.gain.exponentialRampToValueAtTime(gain, t0 + 0.012)
+  g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur)
+  o.connect(g).connect(c.destination)
+  o.start(t0)
+  o.stop(t0 + dur + 0.02)
+}
+
+/** Call from a click/keypress so later cues are allowed to play. */
+export function unlockAudio() {
+  const c = ensure()
+  if (c && c.state === 'suspended') c.resume()
+}
+
+/**
+ * Spoken-free cues for eyes-off-screen moments: a falling pair means "look down now",
+ * a rising pair "look back up", a short chime "done". Always plays (independent of key sounds).
+ */
+export function playCue(kind) {
+  const c = ensure()
+  if (!c) return
+  if (c.state === 'suspended') c.resume()
+  if (kind === 'down') {
+    note(784, 0, 0.16, 0.16)
+    note(523, 0.15, 0.22, 0.16)
+  } else if (kind === 'up') {
+    note(523, 0, 0.16, 0.16)
+    note(784, 0.15, 0.22, 0.16)
+  } else {
+    note(659, 0, 0.12, 0.12)
+    note(784, 0.09, 0.12, 0.12)
+    note(1047, 0.18, 0.25, 0.12)
+  }
+}

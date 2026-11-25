@@ -139,7 +139,7 @@ export default function Analyze() {
         <Stat label="Visual discipline" value={e.avgDiscipline == null ? null : Math.round(e.avgDiscipline)} unit="%" hint={e.measuredSessions ? `${e.measuredSessions} tracked run${e.measuredSessions === 1 ? '' : 's'}` : 'no tracked runs yet'} />
       </section>
 
-      <section aria-label="Summary" className="mt-8 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <section aria-label="Summary" className="mt-8 grid gap-4 md:grid-cols-2">
         <Q title="Doing well" tone="text-emerald-400" items={story.good} empty={story.insufficient ? 'Complete a few more runs to see patterns.' : 'Nothing stands out yet – keep going.'} />
         <Q title="Struggling with" tone="text-[color:var(--warn)]" items={story.bad} empty={story.insufficient ? 'Complete a few more runs to see patterns.' : 'No statistically supported weaknesses right now.'} />
         <Q title="Improved" tone="text-zinc-300" items={story.improved} empty="Improvement is shown once you have enough runs to compare newer with older ones." />
@@ -156,7 +156,7 @@ export default function Analyze() {
         {summary.trend && <p className="mt-3 text-sm text-zinc-400">Newer half vs older half: speed {summary.trend.wpm >= 0 ? '+' : ''}{r1(summary.trend.wpm)} WPM, accuracy {summary.trend.accuracy >= 0 ? '+' : ''}{r1(summary.trend.accuracy)} points.</p>}
       </Card>
 
-      <div className="mt-8 grid gap-4 lg:grid-cols-2">
+      <div className="mt-8 grid items-start gap-4 lg:grid-cols-2">
         <Card>
           <h2 className="text-lg font-semibold text-white">Problem keys</h2>
           <p className="mb-3 mt-1 text-sm text-zinc-400">Keys with an error rate clearly above your own average.</p>
@@ -225,7 +225,7 @@ export default function Analyze() {
         </div>
         {eyeData.length >= 2 ? (
           <div className="mt-4"><Suspense fallback={<Spinner />}><ProgressChart height={220} data={eyeData} lines={[{ key: 'discipline', name: 'eyes on screen %', color: 'var(--accent)', axis: 'left' }]} /></Suspense></div>
-        ) : <p className="mt-4 text-sm text-zinc-500">{e.measuredSessions === 0 ? 'No measured runs yet. Calibrate in Setup and type with eye tracking on.' : 'At least two measured runs are needed for a trend.'}</p>}
+        ) : <p className="mt-4 text-sm text-zinc-500">{e.measuredSessions === 0 ? 'No measured runs yet. Calibrate in Settings and type with eye tracking on.' : 'At least two measured runs are needed for a trend.'}</p>}
         <div className="mt-5 border-t border-zinc-800 pt-4">
           <h3 className="font-medium text-white">Keys you look down for</h3>
           <p className="mt-1 text-sm text-zinc-400">Each keyboard look is matched to what you were typing at that moment. Keys listed here attract looks out of proportion to how often you type them.</p>

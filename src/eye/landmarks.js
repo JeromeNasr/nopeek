@@ -12,6 +12,9 @@ export const LM = {
   // subject's left eye (image RIGHT)
   lOuter: 263, lInner: 362, lUpper: 386, lLower: 374, lIris: 473,
   noseTip: 1, faceLeft: 234, faceRight: 454, forehead: 10, chin: 152,
+  // three points along the middle of each eyelid: averaged, they are steadier than one point
+  rUpperSet: [158, 159, 160], rLowerSet: [144, 145, 153],
+  lUpperSet: [385, 386, 387], lLowerSet: [373, 374, 380],
 }
 export const LANDMARK_COUNT = 478
 
@@ -30,12 +33,21 @@ export function eulerFromMatrix(m) {
   return { pitch: pitch * RAD, yaw: yaw * RAD, roll: roll * RAD }
 }
 
-function eyeFeatures(lm, W, H, left, right, upper, lower, iris) {
+function eyeFeatures(lm, W, H, left, right, upperSet, lowerSet, iris) {
   const p = (i) => ({ x: lm[i].x * W, y: lm[i].y * H })
+  const mean = (idx) => {
+    let x = 0
+    let y = 0
+    for (const i of idx) {
+      x += lm[i].x
+      y += lm[i].y
+    }
+    return { x: (x / idx.length) * W, y: (y / idx.length) * H }
+  }
   const L = p(left)
   const R = p(right)
-  const U = p(upper)
-  const D = p(lower)
+  const U = mean(upperSet)
+  const D = mean(lowerSet)
   const I = p(iris)
   const width = Math.hypot(R.x - L.x, R.y - L.y)
   if (width < 4) return null // face too small / degenerate
@@ -52,7 +64,10 @@ function eyeFeatures(lm, W, H, left, right, upper, lower, iris) {
   const lidSpan = (D.x - U.x) * vx + (D.y - U.y) * vy
   const lidPos = lidSpan > 1e-6 ? ((I.x - U.x) * vx + (I.y - U.y) * vy) / lidSpan : null
   const openness = Math.hypot(D.x - U.x, D.y - U.y) / width
-  return { gazeH, gazeV, lidPos, openness, width }
+  // height of the upper eyelid relative to the line between the eye corners: it drops a lot
+  // when the eyes look down, which a webcam above the screen sees very clearly
+  const lidTop = ((U.x - cx) * vx + (U.y - cy) * vy) / width
+  return { gazeH, gazeV, lidPos, openness, lidTop, width }
 }
 
 /**
@@ -76,8 +91,8 @@ export function readBlendshapes(categories) {
 
 export function extractFeatures(lm, matrix, W, H, blendshapes = null) {
   if (!lm || lm.length < LANDMARK_COUNT) return null
-  const r = eyeFeatures(lm, W, H, LM.rOuter, LM.rInner, LM.rUpper, LM.rLower, LM.rIris)
-  const l = eyeFeatures(lm, W, H, LM.lInner, LM.lOuter, LM.lUpper, LM.lLower, LM.lIris)
+  const r = eyeFeatures(lm, W, H, LM.rOuter, LM.rInner, LM.rUpperSet, LM.rLowerSet, LM.rIris)
+  const l = eyeFeatures(lm, W, H, LM.lInner, LM.lOuter, LM.lUpperSet, LM.lLowerSet, LM.lIris)
   if (!r || !l) return null
   const avg = (a, b) => (a == null || b == null ? (a ?? b) : (a + b) / 2)
 
@@ -103,6 +118,7 @@ export function extractFeatures(lm, matrix, W, H, blendshapes = null) {
     gazeH: avg(r.gazeH, l.gazeH),
     gazeLid: avg(r.lidPos, l.lidPos),
     openness: avg(r.openness, l.openness),
+    lidTop: avg(r.lidTop, l.lidTop),
     // how far the two eyes disagree: large values mean a bad landmark fit
     eyeDisagreement: Math.abs(r.gazeV - l.gazeV),
     faceWidth,

@@ -22,6 +22,9 @@ export default function PrefsPanel({ className }) {
       <Row title="Theme">
         <Seg label="Theme" value={p.theme} onChange={(v) => setPrefs({ theme: v })} options={Object.entries(THEMES).map(([id, label]) => ({ id, label }))} />
       </Row>
+      <Row title="Typing font">
+        <Seg label="Typing font" value={p.typeFont} onChange={(v) => setPrefs({ typeFont: v })} options={[{ id: 'serif', label: <span className="font-serif">serif</span> }, { id: 'sans', label: <span className="font-sans">sans</span> }, { id: 'mono', label: <span className="font-mono text-[0.8rem]">mono</span> }]} />
+      </Row>
       <Row title="Caret">
         <Seg label="Caret style" value={p.caret} onChange={(v) => setPrefs({ caret: v })} options={[{ id: 'line', label: 'line' }, { id: 'block', label: 'block' }, { id: 'underline', label: 'underline' }]} />
       </Row>

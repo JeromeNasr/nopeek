@@ -135,7 +135,7 @@ function LessonInner({ id }) {
           {lesson.showKeyboard && (
             <Card className="mb-6">
               <h2 className="mb-3 text-sm font-semibold  text-zinc-500">Keys in this lesson</h2>
-              <Keyboard profile={profile} highlight={lesson.keys} target={lesson.focus} />
+              <Keyboard compact profile={profile} highlight={lesson.keys} target={lesson.focus} />
               <p className="mt-3 text-xs text-zinc-500">Bright keys are practised here; the glowing ones are new. Colour and the L5…R5 badge show which finger owns each key.</p>
             </Card>
           )}
@@ -185,7 +185,7 @@ export function FingerGuide() {
       <PageHeader title="Finger map" subtitle="Each finger owns a column of keys and returns to its home key after every press. Select a finger to see its keys." />
       <Card className="mb-6">
         <FingerLegend focusFinger={focus} onFocus={setFocus} />
-        <div className="mt-5"><Keyboard profile={profile} focusFinger={focus} /></div>
+        <div className="mt-5"><Keyboard compact profile={profile} focusFinger={focus} /></div>
         <p className="mt-4 text-xs text-zinc-500">Layout: {profile.layout}, {profile.physical.toUpperCase()}, {profile.formFactor}. Change these in <Link className="underline" to="/setup">Setup</Link>. The map follows the standard touch-typing assignment plus any per-key overrides you set.</p>
       </Card>
       <div className="grid gap-4 sm:grid-cols-2">

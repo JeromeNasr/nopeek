@@ -5,18 +5,32 @@ import { createRng } from '../../src/engine/random.js'
 
 export const DEFAULT_USER = {
   // mean feature values when looking at the middle of the screen
-  screen: { pitch: 0, yaw: 0, roll: 0, gazeV: 0.02, gazeH: 0, gazeLid: 0.48, lookDown: 0.1, blink: 0.08, openness: 0.3, faceWidth: 0.36 },
+  screen: { pitch: 0, yaw: 0, roll: 0, gazeV: 0.02, gazeH: 0, gazeLid: 0.48, lidTop: -0.13, lookDown: 0.1, blink: 0.08, openness: 0.3, faceWidth: 0.36 },
   // offsets applied when looking down at the keyboard
-  downDelta: { pitch: 14, gazeV: 0.055, gazeLid: 0.12, lookDown: 0.4, blink: 0.22, yaw: 0, gazeH: 0 },
+  downDelta: { pitch: 14, gazeV: 0.055, gazeLid: 0.12, lidTop: 0.055, lookDown: 0.4, blink: 0.22, yaw: 0, gazeH: 0 },
   // natural spread while reading the whole screen
-  screenSpread: { pitch: 2.2, yaw: 4, gazeV: 0.018, gazeH: 0.05, gazeLid: 0.05, lookDown: 0.12 },
-  noise: { pitch: 0.7, yaw: 0.7, gazeV: 0.005, gazeH: 0.006, gazeLid: 0.02, lookDown: 0.04, openness: 0.012 },
+  screenSpread: { pitch: 2.2, yaw: 4, gazeV: 0.018, gazeH: 0.05, gazeLid: 0.05, lidTop: 0.012, lookDown: 0.12 },
+  noise: { pitch: 0.7, yaw: 0.7, gazeV: 0.005, gazeH: 0.006, gazeLid: 0.02, lidTop: 0.006, lookDown: 0.04, openness: 0.012 },
 }
 
 export function makeUser(overrides = {}) {
   const u = JSON.parse(JSON.stringify(DEFAULT_USER))
-  for (const [k, v] of Object.entries(overrides)) Object.assign(u[k] ?? (u[k] = {}), v)
+  for (const [k, v] of Object.entries(overrides)) {
+    if (v && typeof v === 'object') Object.assign(u[k] ?? (u[k] = {}), v)
+    else u[k] = v
+  }
   return u
+}
+
+/** A user whose keyboard look differs from their screen look by `k` × the typical amount, on every signal. */
+export function scaledUser(k, noise = 1) {
+  const d = DEFAULT_USER.downDelta
+  const n = DEFAULT_USER.noise
+  return makeUser({
+    downDelta: Object.fromEntries(Object.entries(d).map(([key, v]) => [key, v * k])),
+    downOpen: 1 - 0.28 * k,
+    noise: Object.fromEntries(Object.entries(n).map(([key, v]) => [key, v * noise])),
+  })
 }
 
 export function gaussian(rng) {
@@ -30,7 +44,8 @@ export function gaussian(rng) {
 /**
  * One frame's features.
  * kind: 'screen' | 'screen-low' | 'down' | 'away' | 'nod' (head down, eyes still on screen) |
- *       'blink' | 'up' | 'noface'
+ *       'blink' | 'up' | 'noface' | 'deep' (a deep look: lids almost closed, head dipped) |
+ *       'deepEyes' (a deep eyes-only look: lids almost closed, head still)
  */
 export function frame(user, kind, rng, { spread = true, shift = {} } = {}) {
   if (kind === 'noface') return null
@@ -47,6 +62,7 @@ export function frame(user, kind, rng, { spread = true, shift = {} } = {}) {
     gazeV: s.gazeV + look.y * sp.gazeV * 0.5 + n.gazeV * g(),
     gazeH: s.gazeH + look.x * sp.gazeH * 0.5 + n.gazeH * g(),
     gazeLid: s.gazeLid + look.y * sp.gazeLid * 0.5 + n.gazeLid * g(),
+    lidTop: s.lidTop + look.y * sp.lidTop * 0.5 + n.lidTop * g(),
     lookDown: s.lookDown + look.y * sp.lookDown * 0.5 + n.lookDown * g(),
     blink: s.blink + 0.02 * g(),
     openness: s.openness + n.openness * g(),
@@ -57,7 +73,22 @@ export function frame(user, kind, rng, { spread = true, shift = {} } = {}) {
   switch (kind) {
     case 'down':
       for (const k of Object.keys(user.downDelta)) f[k] += user.downDelta[k]
-      f.openness *= 0.72 // eyelids lower noticeably when looking down
+      f.openness *= user.downOpen ?? 0.72 // eyelids lower noticeably when looking down
+      break
+    case 'deep':
+      for (const k of Object.keys(user.downDelta)) f[k] += user.downDelta[k] * 1.2
+      f.openness *= 0.42
+      f.lidTop += 0.035
+      f.blink = Math.max(f.blink, 0.62)
+      break
+    case 'deepEyes':
+      f.pitch += user.downDelta.pitch * 0.1
+      f.gazeV += user.downDelta.gazeV * 1.2
+      f.gazeLid += user.downDelta.gazeLid
+      f.lidTop += user.downDelta.lidTop * 1.6
+      f.lookDown += user.downDelta.lookDown * 1.2
+      f.openness *= 0.42
+      f.blink = Math.max(f.blink, 0.62)
       break
     case 'screen-low': // reading the bottom edge of the screen
       f.pitch += sp.pitch * 0.45
@@ -70,6 +101,8 @@ export function frame(user, kind, rng, { spread = true, shift = {} } = {}) {
       f.gazeV -= user.downDelta.gazeV * 0.7
       f.gazeLid -= user.downDelta.gazeLid * 0.7
       f.lookDown -= user.downDelta.lookDown * 0.6
+      f.lidTop -= user.downDelta.lidTop * 0.6
+      f.openness *= 1.08
       break
     case 'away':
       f.yaw += 40
@@ -80,9 +113,12 @@ export function frame(user, kind, rng, { spread = true, shift = {} } = {}) {
       f.gazeV -= user.downDelta.gazeV * 1.6
       f.gazeLid -= user.downDelta.gazeLid * 1.6
       f.lookDown -= user.downDelta.lookDown * 1.2
+      f.lidTop -= user.downDelta.lidTop * 1.4
+      f.openness *= 1.2
       break
     case 'blink':
       f.openness = s.openness * 0.3
+      f.lidTop += 0.15
       f.blink = 0.92
       f.gazeV += 0.05 // iris appears to drop as lids close
       break
@@ -128,6 +164,7 @@ export function calibrationSamples(user, { seed = 'cal', frames = 120 } = {}) {
     f.gazeH += x * user.screenSpread.gazeH * 0.5
     f.gazeLid += y * user.screenSpread.gazeLid * 0.5
     f.lookDown += y * user.screenSpread.lookDown * 0.5
+    f.lidTop += y * user.screenSpread.lidTop * 0.5
     screen.push(f)
   }
   const down = Array.from({ length: frames }, () => frame(user, 'down', rng, { spread: false }))

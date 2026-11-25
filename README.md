@@ -9,7 +9,7 @@ a typing test whose statistics are computed by Monkeytype's own code, and option
 npm install          # also copies the MediaPipe WASM into public/ (scripts/prepare-assets.mjs)
 cp .env.example .env # optional: Supabase credentials; without them the app runs local-only
 npm run dev
-npm test             # 103+ unit/simulation tests
+npm test             # 134 unit/simulation tests
 npm run test:db      # applies the migration to a throwaway PostgreSQL and checks it (needs postgres binaries)
 npm run lint && npm run build
 ```

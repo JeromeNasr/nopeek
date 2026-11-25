@@ -11,18 +11,19 @@ import { SessionTally } from './tally.js'
 import { FaceTracker } from './tracker.js'
 
 const SETTINGS_KEY = 'eye.settings'
-const PROFILE_KEY = 'eye.profile.v4'
-const SAMPLES_KEY = 'eye.samples.v4' // feature numbers only (no images); lets the model be refined later
-const KEEP = ['pitch', 'yaw', 'roll', 'gazeV', 'gazeH', 'gazeLid', 'lookDown', 'blink', 'openness', 'faceWidth', 'marginFrac', 'eyeDisagreement']
+const PROFILE_KEY = 'eye.profile.v5'
+const SAMPLES_KEY = 'eye.samples.v5' // feature numbers only (no images); lets the model be refined later
+const OLD_SAMPLES_KEY = 'eye.samples.v4'
+const KEEP = ['pitch', 'yaw', 'roll', 'gazeV', 'gazeH', 'gazeLid', 'lidTop', 'lookDown', 'blink', 'openness', 'faceWidth', 'marginFrac', 'eyeDisagreement']
 const compact = (seg) => seg.slice(0, 90).map((f) => Object.fromEntries(KEEP.filter((k) => f[k] != null).map((k) => [k, Math.round(f[k] * 1e4) / 1e4]))) // calibration numbers only; never uploaded
 
 const DEFAULT_SETTINGS = { enabled: false, sensitivity: 'balanced', showPreview: true, hints: true }
 
-const PUSH_INTERVAL_MS = 200
+const PUSH_INTERVAL_MS = 120
 const RELEASE_DELAY_MS = 3000
 
 function emptyLive() {
-  return { state: STATE.UNAVAILABLE, label: 'none', score: null, confidence: 0, reason: null, candidate: null, since: null, drift: 0 }
+  return { state: STATE.UNAVAILABLE, label: 'none', score: null, pKeyboard: null, confidence: 0, reason: null, candidate: null, since: null, drift: 0, z: null }
 }
 
 class EyeSession {
@@ -31,6 +32,7 @@ class EyeSession {
     this.settings = { ...DEFAULT_SETTINGS, ...(readJSON(SETTINGS_KEY) ?? {}) }
     this.profile = readJSON(PROFILE_KEY)
     if (this.profile && !profileUsable(this.profile)) this.profile = this.profile?.ok === false ? this.profile : null
+    if (!this.profile) this._upgradeFromStoredSamples()
     this.runtime = { phase: 'off', error: null, fps: 0, inferenceMs: 0, delegate: null }
     this.live = emptyLive()
     this.issues = []
@@ -48,6 +50,24 @@ class EyeSession {
     this._starting = null
     this.snapshot = this._buildSnapshot()
     this._rebuildGaze()
+  }
+
+  /**
+   * A new tracking model can be refitted from the calibration NUMBERS kept from an
+   * earlier version, so an update does not force everyone to recalibrate.
+   */
+  _upgradeFromStoredSamples() {
+    const old = readJSON(OLD_SAMPLES_KEY)
+    if (!old?.screenSegments?.length || !old?.downSegments?.length) return
+    try {
+      const profile = buildProfile(this._dataFrom({ ...old, brightness: old.brightness ?? null }))
+      writeJSON(SAMPLES_KEY, old)
+      if (profile.ok) writeJSON(PROFILE_KEY, profile)
+      this.profile = profile
+    } catch {
+      /* keep going uncalibrated */
+    }
+    removeKey(OLD_SAMPLES_KEY)
   }
 
   // ---- store plumbing ------------------------------------------------------
@@ -92,22 +112,34 @@ class EyeSession {
     this.gaze = profileUsable(this.profile) ? new GazeTracker(this.profile, paramsFor(this.settings.sensitivity)) : null
   }
 
-  /** Build and store a profile from labelled capture arrays. Returns the (possibly rejected) profile. */
+  /**
+   * Build and store a profile from labelled capture arrays. Returns the new profile; if it
+   * is not usable but a working calibration exists, the working one stays active and the
+   * returned profile carries `keptPrevious: true`.
+   */
   finishCalibration(data) {
     const samples = { screenSegments: (data.screenSegments ?? []).map(compact), downSegments: (data.downSegments ?? []).map(compact), brightness: data.brightness ?? null }
+    const previous = profileUsable(this.profile) ? this.profile : null
+    const profile = buildProfile(this._dataFrom(samples))
+    if (!profile.ok && previous) {
+      this._emit()
+      return { ...profile, keptPrevious: true }
+    }
     writeJSON(SAMPLES_KEY, samples)
-    return this._refit(samples)
+    this._setProfile(profile)
+    return profile
   }
 
-  _refit(samples) {
-    const data = { screen: samples.screenSegments.flat(), down: samples.downSegments.flat(), screenSegments: samples.screenSegments, downSegments: samples.downSegments, brightness: samples.brightness }
-    const profile = buildProfile(data)
+  _dataFrom(samples) {
+    return { screen: samples.screenSegments.flat(), down: samples.downSegments.flat(), screenSegments: samples.screenSegments, downSegments: samples.downSegments, brightness: samples.brightness }
+  }
+
+  _setProfile(profile) {
     this.profile = profile
     if (profile.ok) writeJSON(PROFILE_KEY, profile)
     else removeKey(PROFILE_KEY)
     this._rebuildGaze()
     this._emit()
-    return profile
   }
 
   /**
@@ -115,13 +147,15 @@ class EyeSession {
    * looking at the screen / keyboard, add it to the stored calibration data and refit.
    * @param {'screen'|'down'} label
    */
-  teach(label, { delayMs = 0, ms = 1800 } = {}) {
+  teach(label, { delayMs = 0, ms = 1800, onStart, onEnd } = {}) {
     const stored = readJSON(SAMPLES_KEY)
     if (!stored || this.runtime.phase !== 'running') return Promise.resolve(null)
     return new Promise((resolve) => {
       setTimeout(() => {
+        onStart?.()
         this.beginCapture()
         setTimeout(() => {
+          onEnd?.()
           const { samples } = this.endCapture()
           if (samples.length < 12) {
             resolve(null)
@@ -129,15 +163,11 @@ class EyeSession {
           }
           const key = label === 'down' ? 'downSegments' : 'screenSegments'
           const next = { ...stored, [key]: [...stored[key], compact(samples)].slice(-12) }
-          const previous = this.profile
-          const profile = this._refit(next)
-          if (profile.ok) writeJSON(SAMPLES_KEY, next)
-          else if (previous?.ok) {
-            // a correction must never destroy a working calibration
-            this.profile = previous
-            writeJSON(PROFILE_KEY, previous)
-            this._rebuildGaze()
-            this._emit()
+          const profile = buildProfile(this._dataFrom(next))
+          // a correction must never destroy a working calibration
+          if (profile.ok) {
+            writeJSON(SAMPLES_KEY, next)
+            this._setProfile(profile)
           }
           resolve(profile)
         }, ms)
@@ -151,7 +181,9 @@ class EyeSession {
     return {
       app: 'touchtype', at: new Date().toISOString(),
       runtime: this.runtime, settings: this.settings, live: this.live,
-      profile: p && { version: p.version, ok: p.ok, quality: p.quality, thresholds: p.thresholds, counts: p.counts, brightness: p.brightness,
+      adaptation: this.gaze ? { tOffset: this.gaze.tOffset, offsets: this.gaze.offset } : null,
+      lastFrame: this.lastFeatures ?? null,
+      profile: p && { version: p.version, ok: p.ok, quality: p.quality, emission: p.emission, thresholds: p.thresholds, counts: p.counts, brightness: p.brightness,
         axes: p.axes, protos: p.protos?.map((x) => x.axes), screen: p.screen, down: p.down },
     }
   }
@@ -325,12 +357,11 @@ class EyeSession {
 
     if (this.gaze) {
       const out = this.gaze.update(t, features, brightness)
-      this.gaze.adaptFrom(features)
       this.tally?.update(t, out)
       const changed = out.state !== this.live.state || out.events.length > 0
       if (changed || t - this._lastPush > PUSH_INTERVAL_MS) {
         this.live = {
-          state: out.state, label: out.label, score: out.score, confidence: out.confidence,
+          state: out.state, label: out.label, score: out.score, pKeyboard: out.pKeyboard, confidence: out.confidence,
           reason: out.reason ?? null, candidate: out.candidate, since: out.since, z: out.z ?? null,
           drift: this.gaze.driftRatio(),
         }

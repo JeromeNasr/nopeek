@@ -85,3 +85,29 @@ Key-to-frame latency without the camera is unchanged (about 24 ms, bound by the 
 * **Verified on a real face** (MediaPipe's test portrait as a looping fake webcam, two-state video): landmarks and blendshape features are sane (about 15-20 fps, 17-30 ms/frame on CPU); the wizard completes to "Tracking is ready"; the live label followed the camera with **0.40 s** onset delay (the 400 ms confirm dwell) and **0.15 s** exit delay. A static photo has no sensor noise, so its separation figure is not a real-world number, and it cannot show real eye movement.
 * **Bug: finishing a lesson discarded the result screen** (saving progress changed the exercise seed, regenerating the text). Seed is now fixed per visit.
 * **Identity**: Paper / Dusk / Moss themes (system light/dark on first run), serif typing text, pill navigation, one-row length selector with options folded away. Feature test (`22` checks across every page and mode) passes with zero console errors.
+
+## 16. Fourth pass: tracking v5, guided calibration, UI clean-up
+**Root cause of inaccurate tracking**: at a normal sitting distance (face 10–15 % of a 640 px frame) a hard confidence
+gate marked every frame "uncertain", so the tracker never reported "keyboard" although calibration said "Good".
+Reproduced with a real face at natural distance and fixed. Details and the new decision model (eyelid signal,
+likelihood ratios, hidden Markov filter, percentile posture adaptation): `docs/EYE_TRACKING.md`.
+
+**Calibration**: tones tell you when to look down and back up, rounds advance by themselves, a step indicator shows
+where you are, and a 10-second self-check measures detection on the live tracker. A failed recalibration keeps the
+working one; v4 calibrations are refit automatically.
+
+**Measured (real-face fake webcam, natural distance)**: look down detected in 0.33–0.36 s, look back in 0.23–0.27 s,
+0 false alarms, self-check passed. Not a real-world accuracy figure (see `docs/EYE_TRACKING.md`).
+
+**Typing with tracking running** (headless Chromium, 4× CPU throttle, 310 keys at 35 ms, calibrated tracking switching
+between screen and keyboard): handler 1.34 ms mean / 2.5 ms p95; key to second frame 25.8 ms mean / 37 ms p95 / 49 ms max;
+0 long tasks. The typing view no longer re-renders on tracker updates; only two small status components subscribe.
+
+**UI**: Settings reorganised into Eye tracking / Typing / Keyboard / Privacy with a section menu; the keyboard editor is
+three controls with the map, finger overrides and key tester folded away; typing font option (serif, sans, mono);
+sign-in page uses the shared design; the header eye dot only shows while tracking is on; the Type page links to eye
+setup; lesson keyboards show only the main block with visible keys; Progress cards no longer stretch into empty boxes;
+no sideways scrolling at 390 px on any page (checked automatically).
+
+**Tests**: 134 unit tests; 31 browser feature checks (every page and mode, zero console errors); real-face calibration
++ self-check run; lint and build clean.

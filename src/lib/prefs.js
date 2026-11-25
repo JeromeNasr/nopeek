@@ -13,6 +13,7 @@ export const DEFAULT_PREFS = {
   guide: 'smart', // smart (only when you hesitate) | always
   focusMode: true,
   fontScale: 1,
+  typeFont: 'serif', // serif | sans | mono
 }
 
 const stored = readJSON('prefs.v2') ?? {}
@@ -29,6 +30,7 @@ function apply() {
   r.style.setProperty('--type-scale', String(prefs.fontScale))
   r.dataset.caret = prefs.caret
   r.dataset.theme = prefs.theme
+  r.dataset.typefont = prefs.typeFont
 }
 apply()
 

@@ -58,7 +58,7 @@ export default function Practice() {
 
   return (
     <div className="mx-auto max-w-5xl px-6 py-10">
-      <PageHeader title="Practice" subtitle="Short drills built from your own mistakes, rhythm and eye data – generated deterministically from the numbers behind each recommendation." />
+      <PageHeader title="Practice" subtitle="Short drills built from your own mistakes, rhythm and eye-tracking data." />
 
       <h2 className="mb-3 text-lg font-semibold text-white">For you</h2>
       {personalised.length === 0 ? (

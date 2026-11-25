@@ -9,7 +9,7 @@ import { useTraining } from '../data/trainingContext.js'
 import { TypingEngine } from '../engine/typingEngine.js'
 import { STATE } from '../eye/classifier.js'
 import { eye } from '../eye/session.js'
-import { useEye, useEyeTracking } from '../eye/useEye.js'
+import { useEyeCamera, useEyeValue } from '../eye/useEye.js'
 import { usePrefs } from '../lib/prefs.js'
 import { playKey, playTick } from '../lib/sound.js'
 import { analyzeKeystrokes, attributePeeks } from '../training/analysis.js'
@@ -53,10 +53,17 @@ function RunProgress({ engine, timeLimitMs, totalWords }) {
   return <ProgressBar value={timeLimitMs ? live.elapsedMs : wi} max={timeLimitMs ?? totalWords} label="Progress" />
 }
 
+// Small subscribed leaves: only these re-render on eye-tracker updates, never the typing view.
 function EyesUpHint() {
-  const e = useEye()
-  if (!e.settings.hints || e.live.state !== STATE.KEYBOARD || e.runtime.phase !== 'running') return <span className="h-6" />
-  return <span role="status" className="h-6 text-xs font-medium text-amber-300">eyes up – trust your fingers</span>
+  const show = useEyeValue((e) => e.settings.hints && e.live.state === STATE.KEYBOARD && e.runtime.phase === 'running')
+  if (!show) return <span className="h-6" />
+  return <span role="status" className="h-6 text-xs font-medium text-[color:var(--warn)]">eyes up – trust your fingers</span>
+}
+
+function EyeErrorNotice() {
+  const message = useEyeValue((e) => (e.settings.enabled && e.runtime.phase === 'error' ? e.runtime.error?.message ?? 'The camera could not be used.' : null))
+  if (!message) return null
+  return <Notice tone="warn" className="mt-6" title="Eye tracking is unavailable">{message} You can keep typing – this run just won&apos;t measure keyboard-looking.</Notice>
 }
 
 /**
@@ -128,7 +135,7 @@ const KeyGuide = forwardRef(function KeyGuide({ profile, highlight, mode }, ref)
 export default function SessionRunner({ makeRun, meta, lesson = null, showKeyboard = false, guideMode = null, metronome = false, Actions = null, actionsProps = null }) {
   const { profile, sessions, refresh } = useTraining()
   const prefs = usePrefs()
-  const eyeState = useEyeTracking(true)
+  useEyeCamera(true)
   const [attempt, setAttempt] = useState(0)
   const [focused, setFocused] = useState(true)
   const [outcome, setOutcome] = useState(null) // { engine, result, check, mistakes, peekCodes, saveStatus }
@@ -379,7 +386,7 @@ export default function SessionRunner({ makeRun, meta, lesson = null, showKeyboa
       <div className="mb-4 flex flex-wrap items-end justify-between gap-4">
         <LiveHud engine={engine} timeLimitMs={run.timeLimitMs} totalWords={totalWords} />
         <div className="chrome flex flex-col items-end gap-1">
-          <EyeStatus />
+          <EyeStatus actionable />
           <EyesUpHint />
         </div>
       </div>
@@ -411,9 +418,7 @@ export default function SessionRunner({ makeRun, meta, lesson = null, showKeyboa
 
       {guide !== 'off' && <KeyGuide ref={guideRef} profile={profile} highlight={lesson?.keys ?? null} mode={guide} />}
 
-      {eyeState.settings.enabled && eyeState.runtime.phase === 'error' && (
-        <Notice tone="warn" className="mt-6" title="Eye tracking is unavailable">{eyeState.runtime.error?.message} You can keep typing – this run just won&apos;t measure keyboard-looking.</Notice>
-      )}
+      <EyeErrorNotice />
     </div>
   )
 }

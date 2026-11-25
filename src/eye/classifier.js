@@ -1,19 +1,27 @@
-// Gaze classification: per-frame scoring against a personal calibration, then a
-// time-aware state machine.
+// Gaze classification.
+//
+// Every frame is turned into EVIDENCE (a log-likelihood ratio: does this look more like
+// my keyboard look or my screen look?) using the personal calibration. A two-state hidden
+// Markov filter accumulates that evidence over time into P(keyboard):
+//   * a single noisy frame cannot flip the state,
+//   * a clear look flips it within a few frames,
+//   * a borderline look needs more frames,
+//   * frames that carry no information (blinks, bad light, half a face) simply hold it.
+// Peeks, brief glances and returns are read from P(keyboard) with hysteresis and a short
+// confirmation time.
 //
 // States
 //   screen       looking at the screen
 //   keyboard     confirmed look down toward the keyboard (a "peek")
 //   away         confirmed look elsewhere (side, up, away from the desk)
-//   uncertain    we cannot tell (blinks excluded; low confidence / ambiguous / disagreeing signals)
+//   uncertain    we cannot tell (poor measurements, or evidence that stays ambiguous)
 //   unavailable  no face / camera lost
-// Short deviations that return to the screen are recorded as brief glances, not peeks.
 
-import { projectScore, signalZ } from './calibration.js'
+import { frameLLR, projectScore, signalZ } from './calibration.js'
 
 /**
- * One-Euro filter (Casiez et al.): heavy smoothing while the signal is steady,
- * almost none while it moves fast – low jitter without adding lag to real looks.
+ * One-Euro filter (Casiez et al.): heavy smoothing while a signal is steady, little
+ * while it moves fast. Used for display meters.
  */
 export class OneEuro {
   constructor(minCutoff = 1.2, beta = 0.6, dCutoff = 1) {
@@ -53,69 +61,85 @@ export const STATE = Object.freeze({
 })
 
 export const SENSITIVITY = {
-  // `shift` moves this user's own calibrated threshold up or down
-  relaxed: { confirmDownMs: 700, shift: 0.07 },
-  balanced: { confirmDownMs: 400, shift: 0 },
-  strict: { confirmDownMs: 260, shift: -0.07 },
+  relaxed: { confirmDownMs: 600, pEnter: 0.95 },
+  balanced: { confirmDownMs: 280, pEnter: 0.9 },
+  strict: { confirmDownMs: 150, pEnter: 0.85 },
 }
 
 export const DEFAULT_PARAMS = {
-  enterDown: 0.7,
-  exitDown: 0.45,
-  confirmDownMs: 400,
-  shift: 0,
-  confirmAwayMs: 800,
+  confirmDownMs: 280,
+  pEnter: 0.9,
+  pExit: 0.35,
   exitConfirmMs: 150,
+  confirmAwayMs: 800,
   minBriefMs: 150,
   noFaceGraceMs: 600,
   reacquireFrames: 3,
   uncertainAfterMs: 1200,
-  blinkOpenRatio: 0.55,
-  blinkMaxMs: 500,
+  // Eyes that look "closed" for longer than a blink while typing are, with a webcam above
+  // the screen, almost always looking down at the keys.
+  closedAsDownMs: 600,
+  closedLLR: 1.2,
+  // HMM priors: roughly one look down every 4 s, a look lasts about 1 s
+  rateToKeyboard: 0.25,
+  rateToScreen: 1.0,
   yawAwayDeg: 22,
   gazeAwayH: 0.22,
   upScore: -0.9,
-  driftRate: 0.002,
   minConfidence: 0.5,
+  // posture adaptation
+  adaptWindowMs: 20000,
+  adaptEveryMs: 1000,
+  adaptMinFrames: 120,
+  adaptMaxOffset: 0.4,
 }
 
 export function paramsFor(sensitivity = 'balanced') {
   return { ...DEFAULT_PARAMS, ...(SENSITIVITY[sensitivity] ?? SENSITIVITY.balanced) }
 }
 
-/** Confidence in a frame's measurements, 0..1. */
+/**
+ * Confidence in a frame's measurements, 0..1. Only genuinely unusable frames fall below
+ * 0.5: a face far from the camera is normal and is not penalised much.
+ */
 export function frameConfidence(f, brightness = null) {
   let q = 1
-  if (f.faceWidth < 0.15) q *= 0.3
-  else if (f.faceWidth > 0.75) q *= 0.5
-  if (f.marginFrac < 0.015) q *= 0.4
-  if (brightness != null && brightness < 40) q *= 0.4
-  if ((f.eyeDisagreement ?? 0) > 0.12) q *= 0.5
-  if (f.roll != null && Math.abs(f.roll) > 35) q *= 0.5
+  if (f.faceWidth < 0.06) q *= 0.3
+  else if (f.faceWidth < 0.1) q *= 0.8
+  else if (f.faceWidth > 0.8) q *= 0.6
+  if (f.marginFrac < -0.02) q *= 0.5 // part of the face is outside the frame
+  if (brightness != null && brightness < 25) q *= 0.45
+  if ((f.eyeDisagreement ?? 0) > 0.25) q *= 0.5
+  if (f.roll != null && Math.abs(f.roll) > 40) q *= 0.5
   return q
+}
+
+/** Is this frame a blink-like eye closure (relative to this user's own eyes)? */
+function isClosed(profile, f) {
+  const openS = profile.screen.openness?.median ?? null
+  const openD = profile.down?.openness?.median ?? openS
+  const blinkD = profile.down?.blink?.median ?? profile.screen.blink?.median ?? null
+  const byLids = f.openness != null && openS != null && f.openness < Math.min(openS * 0.45, (openD ?? openS) * 0.65)
+  const byShape = f.blink != null && blinkD != null && f.blink > Math.max(0.7, blinkD + 0.25)
+  return byLids || byShape
 }
 
 /**
  * Score one frame. Pure function: no temporal logic.
- * @returns {{ label: 'screen'|'down'|'away'|'blink'|'uncertain', t: number|null, z: object, confidence: number, reason?: string }}
+ * @returns {{ label: 'screen'|'down'|'ambiguous'|'closed'|'away'|'uncertain', t: number|null, llr: number|null, z: object, confidence: number, reason?: string }}
  */
-export function scoreFrame(profile, f, { params = DEFAULT_PARAMS, offset = null, brightness = null, inKeyboard = false, smooth = null } = {}) {
+export function scoreFrame(profile, f, { params = DEFAULT_PARAMS, offset = null, tOffset = 0, brightness = null } = {}) {
   const confidence = frameConfidence(f, brightness)
-  // Blink detection must not swallow keyboard looks: eyelids lower when you look down,
-  // so thresholds are set relative to how THIS user's eyes look during a keyboard look.
-  const openS = profile.screen.openness?.median ?? null
-  const openD = profile.down?.openness?.median ?? openS
-  const blinkD = profile.down?.blink?.median ?? null
-  const byShape = f.blink != null && blinkD != null && f.blink > Math.max(0.6, blinkD + 0.25)
-  const byLids = f.openness != null && openS != null && f.openness < Math.min(openS * params.blinkOpenRatio, (openD ?? openS) * 0.7)
-  if (byShape || byLids) {
-    return { label: 'blink', t: null, z: {}, confidence }
-  }
-  if (confidence < params.minConfidence) return { label: 'uncertain', t: null, z: {}, confidence, reason: 'low-confidence' }
+  const { t, z: rawZ } = projectScore(profile, f, offset)
+  const z = signalZ(profile, f, offset)
+  if (confidence < params.minConfidence) return { label: 'uncertain', t, llr: null, z, confidence, reason: 'low-confidence' }
+  if (t == null) return { label: 'uncertain', t: null, llr: null, z: rawZ, confidence, reason: 'no-signal' }
 
-  const { t: raw, z } = projectScore(profile, f, offset)
-  if (raw == null) return { label: 'uncertain', t: null, z, confidence, reason: 'no-signal' }
-  const t = smooth ? smooth(raw) : raw
+  if (isClosed(profile, f)) {
+    // A blink and a very deep look down both close the eyes. A clearly dipped head says "look";
+    // otherwise the tracker decides by duration (blinks are short).
+    if (!(z.pitch != null && z.pitch >= 0.6)) return { label: 'closed', t, llr: null, z, confidence, reason: 'eyes-closed' }
+  }
 
   // Away: head turned sideways, eyes far to the side, or looking well above the screen.
   const sYaw = profile.screen.yaw
@@ -124,30 +148,32 @@ export function scoreFrame(profile, f, { params = DEFAULT_PARAMS, offset = null,
   const sGaze = profile.screen.gazeH
   const gazeHDev = f.gazeH != null && sGaze ? Math.abs(f.gazeH - sGaze.median) : 0
   const gazeLimit = Math.max(params.gazeAwayH, (sGaze?.sd ?? 0) * 4)
-  if (yawDev > yawLimit || (gazeHDev > gazeLimit && yawDev > yawLimit * 0.5) || t < params.upScore) {
-    return { label: 'away', t, z, confidence, reason: yawDev > yawLimit ? 'head-turned' : t < params.upScore ? 'looking-up' : 'eyes-sideways' }
+  const tc = t - tOffset
+  if (yawDev > yawLimit || (gazeHDev > gazeLimit && yawDev > yawLimit * 0.5) || tc < params.upScore) {
+    return { label: 'away', t, llr: null, z, confidence, reason: yawDev > yawLimit ? 'head-turned' : tc < params.upScore ? 'looking-up' : 'eyes-sideways' }
   }
 
-  // A dipped head with eyes rolled UP toward the screen is thinking or nodding, not a peek.
+  // A dipped head with the eyes rolled UP toward the screen is thinking or nodding, not a peek.
   // (Eyes dropping while the head stays still is a real, eyes-only peek and is NOT excluded.)
-  const pooled = signalZ(profile, f, offset)
-  const eyeZ = ['gazeV', 'gazeLid', 'lookDown'].map((k) => pooled[k]).filter((v) => v != null)
+  const eyeZ = ['gazeV', 'gazeLid', 'lidTop', 'lookDown'].map((k) => z[k]).filter((v) => v != null)
   const eyeMean = eyeZ.length ? eyeZ.reduce((x, y) => x + y, 0) / eyeZ.length : null
-  if (pooled.pitch != null && pooled.pitch > 0.5 && eyeMean != null && eyeMean < -0.2) {
-    return { label: 'uncertain', t, z, confidence, reason: 'head-down-eyes-up' }
+  if (z.pitch != null && z.pitch > 0.5 && eyeMean != null && eyeMean < -0.2) {
+    return { label: 'uncertain', t, llr: null, z, confidence, reason: 'head-down-eyes-up' }
   }
 
-  const th = profile.thresholds ?? { enter: params.enterDown, exit: params.exitDown }
-  const enterAt = Math.min(0.9, Math.max(0.4, th.enter + (params.shift ?? 0)))
-  const exitAt = Math.min(enterAt - 0.1, th.exit + (params.shift ?? 0))
-  if (t >= (inKeyboard ? exitAt : enterAt)) return { label: 'down', t, z: pooled, confidence }
-  if (t >= exitAt && !inKeyboard) return { label: 'uncertain', t, z: pooled, confidence, reason: 'ambiguous' }
-  return { label: 'screen', t, z: pooled, confidence }
+  // evidence, weighted by how much the measurements can be trusted
+  const raw = frameLLR(profile, t, tOffset)
+  if (raw == null) return { label: 'uncertain', t, llr: null, z, confidence, reason: 'no-model' }
+  const llr = raw * Math.min(1, confidence)
+  const label = llr > 0.5 ? 'down' : llr < -0.5 ? 'screen' : 'ambiguous'
+  return { label, t, llr, z, confidence }
 }
 
+const quantile = (sorted, q) => sorted[Math.min(sorted.length - 1, Math.max(0, Math.floor(q * (sorted.length - 1))))]
+
 /**
- * Temporal state machine. Feed it timestamped feature frames; it emits events
- * (peek-start / peek-end / glance) and keeps `state` current.
+ * Temporal filter + state machine. Feed it timestamped feature frames; it emits events
+ * (peek-start / peek-end / glance / away-start / away-end) and keeps `state` current.
  */
 export class GazeTracker {
   constructor(profile, params = DEFAULT_PARAMS) {
@@ -159,18 +185,27 @@ export class GazeTracker {
   reset() {
     this.state = STATE.UNAVAILABLE
     this.stateSince = null
-    this.cand = null // pending {label:'down'|'away', since, from}
-    this.exitSince = null
+    this.pK = 0.05 // P(keyboard)
+    this.lastT = null
     this.lastFaceT = null
     this.goodStreak = 0
     this.uncertainSince = null
-    this.blinkSince = null
-    this.filter?.reset()
-    this.filter ??= new OneEuro()
-    this.offset = { pitch: 0, gazeV: 0, gazeLid: 0, lookDown: 0, yaw: 0 }
+    this.ambiguousSince = null
+    this.closedSince = null
+    this.aboveSince = null // P(keyboard) first crossed 0.5 in this excursion
+    this.aboveFrom = null
+    this.enterSince = null // P(keyboard) >= pEnter continuously since
+    this.belowSince = null // while in keyboard: P(keyboard) first dropped below 0.5
+    this.exitSince = null
+    this.awayCand = null
+    this.awayExitSince = null
     this.keyboardStart = null
     this.awayStart = null
-    this.last = { label: 'none', t: null, confidence: 0 }
+    this.offset = { pitch: 0, gazeV: 0, gazeLid: 0, lidTop: 0, openness: 0, lookDown: 0, blink: 0, yaw: 0 }
+    this.tOffset = 0
+    this.window = []
+    this.lastAdapt = 0
+    this.last = { label: 'none', t: null, llr: null, confidence: 0 }
   }
 
   _set(state, t) {
@@ -182,7 +217,7 @@ export class GazeTracker {
 
   /** How far the screen baseline has drifted, relative to the screen→keyboard separation (0..1+). */
   driftRatio() {
-    let worst = 0
+    let worst = Math.abs(this.tOffset)
     for (const a of this.profile.axes) {
       const off = Math.abs(this.offset[a.feature] ?? 0)
       worst = Math.max(worst, off / Math.abs(a.sep))
@@ -194,122 +229,172 @@ export class GazeTracker {
    * @param {number} t ms timestamp
    * @param {object|null} features from extractFeatures, or null when no face
    * @param {number|null} brightness
-   * @returns {{state:string, label:string, score:number|null, confidence:number, events:object[]}}
    */
   update(t, features, brightness = null) {
     const p = this.params
     const events = []
     const emit = (e) => events.push(e)
+    const dt = this.lastT == null ? 50 : Math.max(0, Math.min(500, t - this.lastT))
+    this.lastT = t
 
     if (!features) {
       this.goodStreak = 0
-      this.filter.reset()
+      this.closedSince = null
       if (this.lastFaceT == null || t - this.lastFaceT > p.noFaceGraceMs) {
         this._closeOpenPeriods(t, emit)
+        this._clearCandidates()
+        this.pK = 0.05
         this._set(STATE.UNAVAILABLE, t)
-        this.cand = null
       }
-      this.last = { label: 'none', t: null, confidence: 0 }
+      this.last = { label: 'none', t: null, llr: null, confidence: 0 }
       return this._out(events)
     }
     this.lastFaceT = t
 
-    const frame = scoreFrame(this.profile, features, {
-      params: p,
-      offset: this.offset,
-      brightness,
-      inKeyboard: this.state === STATE.KEYBOARD,
-      smooth: (x) => this.filter.filter(x, t),
-    })
+    const frame = scoreFrame(this.profile, features, { params: p, offset: this.offset, tOffset: this.tOffset, brightness })
     this.last = frame
 
     if (this.state === STATE.UNAVAILABLE) {
-      if (frame.label === 'uncertain' || frame.label === 'blink') {
+      if (frame.label === 'uncertain') {
         this.goodStreak = 0
         return this._out(events)
       }
       this.goodStreak++
       if (this.goodStreak < p.reacquireFrames) return this._out(events)
+      this.pK = 0.05
       this._set(STATE.UNCERTAIN, t)
-      this.uncertainSince = t
     }
 
-    switch (frame.label) {
-      case 'blink': {
-        this.blinkSince ??= t
-        if (t - this.blinkSince > p.blinkMaxMs && this.state === STATE.SCREEN) {
-          // eyes held closed: we cannot know where they are looking
-          this._set(STATE.UNCERTAIN, t)
-          this.uncertainSince ??= t
+    // ---- evidence ------------------------------------------------------------------
+    let llr = frame.llr
+    if (frame.label === 'closed') {
+      this.closedSince ??= t
+      llr = t - this.closedSince >= p.closedAsDownMs ? p.closedLLR : null
+    } else {
+      this.closedSince = null
+    }
+
+    // HMM predict (continuous-time switching) then update with this frame's evidence
+    const a = 1 - Math.exp(-(dt / 1000) * p.rateToScreen)
+    const b = 1 - Math.exp(-(dt / 1000) * p.rateToKeyboard)
+    let pk = this.pK * (1 - a) + (1 - this.pK) * b
+    if (llr != null && frame.label !== 'away') {
+      const odds = (pk / (1 - pk)) * Math.exp(llr)
+      pk = odds / (1 + odds)
+    }
+    this.pK = Math.min(1 - 1e-4, Math.max(1e-4, pk))
+
+    if (frame.llr != null && frame.confidence >= 0.7) this._adapt(t, frame.t)
+
+    // ---- away ----------------------------------------------------------------------
+    if (frame.label === 'away') {
+      this.awayExitSince = null
+      if (this.state !== STATE.AWAY) {
+        this.awayCand ??= { since: t, from: this.state }
+        if (t - this.awayCand.since >= p.confirmAwayMs) {
+          const { since, from } = this.awayCand
+          this.awayCand = null
+          if (this.state === STATE.KEYBOARD) this._endPeriod(since, emit, STATE.UNCERTAIN)
+          this._clearKeyboardCandidate()
+          this._set(STATE.AWAY, since)
+          this.awayStart = since
+          emit({ type: 'away-start', startT: since, confirmedAt: t, from })
         }
-        break
       }
-      case 'uncertain': {
-        this.blinkSince = null
-        this.uncertainSince ??= t
-        if (this.state === STATE.KEYBOARD || this.state === STATE.AWAY) {
-          // hold a confirmed state through short uncertainty
-          if (t - this.uncertainSince > p.uncertainAfterMs) this._endPeriod(t, emit, STATE.UNCERTAIN)
-        } else if (t - this.uncertainSince >= p.uncertainAfterMs) {
-          this.cand = null
-          this._set(STATE.UNCERTAIN, t)
-        }
-        break
+      this.uncertainSince = null
+      return this._out(events)
+    }
+    if (this.awayCand) {
+      const dur = t - this.awayCand.since
+      if (dur >= p.minBriefMs) emit({ type: 'glance', kind: 'away', startT: this.awayCand.since, durationMs: dur, from: this.awayCand.from })
+      this.awayCand = null
+    }
+    if (this.state === STATE.AWAY && llr != null && this.pK < 0.5) {
+      this.awayExitSince ??= t
+      if (t - this.awayExitSince >= p.exitConfirmMs) this._endPeriod(this.awayExitSince, emit, STATE.SCREEN)
+    }
+
+    // ---- frames we cannot use --------------------------------------------------------
+    if (llr == null && frame.label !== 'closed') {
+      this.uncertainSince ??= t
+      if (t - this.uncertainSince >= p.uncertainAfterMs) {
+        if (this.state === STATE.KEYBOARD || this.state === STATE.AWAY) this._endPeriod(t, emit, STATE.UNCERTAIN)
+        else if (this.state === STATE.SCREEN) this._set(STATE.UNCERTAIN, t)
+        this._clearKeyboardCandidate()
       }
-      case 'screen': {
-        this.blinkSince = null
-        this.uncertainSince = null
-        this._onScreen(t, emit)
-        break
-      }
-      case 'down':
-      case 'away': {
-        this.blinkSince = null
-        this.uncertainSince = null
+    } else {
+      this.uncertainSince = null
+    }
+
+    // ---- keyboard ------------------------------------------------------------------
+    if (this.state === STATE.KEYBOARD) {
+      if (this.pK < 0.5) this.belowSince ??= t
+      else this.belowSince = null
+      if (this.pK <= p.pExit) {
+        this.exitSince ??= t
+        if (t - this.exitSince >= p.exitConfirmMs) this._endPeriod(this.belowSince ?? this.exitSince, emit, STATE.SCREEN)
+      } else {
         this.exitSince = null
-        this._onDeviation(frame.label, t, emit)
-        break
       }
-      default:
-        break
+      return this._out(events)
+    }
+
+    if (this.pK >= 0.5) {
+      if (this.aboveSince == null) {
+        this.aboveSince = t
+        this.aboveFrom = this.state
+      }
+    } else if (this.aboveSince != null) {
+      const dur = t - this.aboveSince
+      if (dur >= p.minBriefMs) emit({ type: 'glance', kind: 'keyboard', startT: this.aboveSince, durationMs: dur, from: this.aboveFrom })
+      this.aboveSince = null
+      this.aboveFrom = null
+    }
+
+    if (this.pK >= p.pEnter) {
+      this.enterSince ??= t
+      if (t - this.enterSince >= p.confirmDownMs) {
+        const startT = this.aboveSince ?? this.enterSince
+        const from = this.aboveFrom ?? this.state
+        if (this.state === STATE.AWAY) this._endPeriod(startT, emit, STATE.UNCERTAIN)
+        this._clearKeyboardCandidate()
+        this._set(STATE.KEYBOARD, startT)
+        this.keyboardStart = startT
+        this.belowSince = null
+        this.exitSince = null
+        emit({ type: 'peek-start', startT, confirmedAt: t, from })
+        return this._out(events)
+      }
+    } else {
+      this.enterSince = null
+    }
+
+    if (llr != null && this.state !== STATE.AWAY) {
+      if (this.pK < 0.5) {
+        this.ambiguousSince = null
+        this._set(STATE.SCREEN, t)
+      } else {
+        // probability stuck between "screen" and a confirmed look: say so honestly
+        this.ambiguousSince ??= t
+        if (t - this.ambiguousSince >= p.uncertainAfterMs && this.state === STATE.SCREEN) this._set(STATE.UNCERTAIN, t)
+      }
     }
     return this._out(events)
   }
 
-  _onScreen(t, emit) {
-    const p = this.params
-    if (this.state === STATE.KEYBOARD || this.state === STATE.AWAY) {
-      this.exitSince ??= t
-      if (t - this.exitSince >= p.exitConfirmMs) this._endPeriod(this.exitSince, emit, STATE.SCREEN)
-      return
-    }
-    if (this.cand) {
-      const dur = t - this.cand.since
-      if (dur >= p.minBriefMs) emit({ type: 'glance', kind: this.cand.label === 'down' ? 'keyboard' : 'away', startT: this.cand.since, durationMs: dur, from: this.cand.from })
-      this.cand = null
-    }
-    this._set(STATE.SCREEN, t)
+  _clearKeyboardCandidate() {
+    this.aboveSince = null
+    this.aboveFrom = null
+    this.enterSince = null
+    this.ambiguousSince = null
   }
 
-  _onDeviation(label, t, emit) {
-    const p = this.params
-    const kind = label === 'down' ? STATE.KEYBOARD : STATE.AWAY
-    if (this.state === kind) return
-    if (this.state === STATE.KEYBOARD || this.state === STATE.AWAY) {
-      // switching directly between kinds: close the old period immediately
-      this._endPeriod(t, emit, STATE.UNCERTAIN)
-    }
-    if (!this.cand || this.cand.label !== label) this.cand = { label, since: t, from: this.state }
-    const need = label === 'down' ? p.confirmDownMs : p.confirmAwayMs
-    if (t - this.cand.since >= need) {
-      const startT = this.cand.since
-      const from = this.cand.from
-      this.cand = null
-      this._set(kind, startT)
-      if (kind === STATE.KEYBOARD) this.keyboardStart = startT
-      else this.awayStart = startT
-      emit({ type: kind === STATE.KEYBOARD ? 'peek-start' : 'away-start', startT, confirmedAt: t, from })
-    }
+  _clearCandidates() {
+    this._clearKeyboardCandidate()
+    this.awayCand = null
+    this.awayExitSince = null
+    this.uncertainSince = null
+    this.closedSince = null
   }
 
   _endPeriod(endT, emit, next) {
@@ -321,6 +406,8 @@ export class GazeTracker {
       this.awayStart = null
     }
     this.exitSince = null
+    this.belowSince = null
+    this.awayExitSince = null
     this._set(next, endT)
   }
 
@@ -328,7 +415,28 @@ export class GazeTracker {
     if (this.state === STATE.KEYBOARD || this.state === STATE.AWAY) this._endPeriod(this.lastFaceT ?? t, emit, STATE.UNAVAILABLE)
   }
 
-  /** Slowly follow posture changes, but only while clearly looking at the screen. */
+  /**
+   * Follow posture changes (leaning in, slouching, moving the laptop). The 15th percentile
+   * of recent scores is where "looking at the screen" now sits, as long as the user spends at
+   * least ~15 % of the time on the screen. Large, keyboard-sized shifts are never absorbed, so
+   * someone who peeks constantly does not teach the tracker that peeking is normal.
+   */
+  _adapt(t, rawT) {
+    const p = this.params
+    this.window.push({ at: t, v: rawT })
+    let drop = 0
+    while (drop < this.window.length && t - this.window[drop].at > p.adaptWindowMs) drop++
+    if (drop) this.window.splice(0, drop)
+    if (t - this.lastAdapt < p.adaptEveryMs || this.window.length < p.adaptMinFrames) return
+    this.lastAdapt = t
+    const vals = this.window.map((x) => x.v - this.tOffset).sort((x, y) => x - y)
+    const p15 = quantile(vals, 0.15)
+    let next = this.tOffset
+    if (p15 > 0.12 && p15 < 0.55) next += 0.3 * (p15 - 0.05)
+    else if (p15 < -0.3) next += 0.3 * (p15 + 0.1)
+    this.tOffset = Math.max(-p.adaptMaxOffset, Math.min(p.adaptMaxOffset, next))
+  }
+
   /**
    * Instantly re-centre the screen baseline from a short burst of frames captured
    * while the user looks at the screen (after shifting in the chair, moving the laptop…).
@@ -336,30 +444,20 @@ export class GazeTracker {
   recenter(samples) {
     const ok = samples.filter(Boolean)
     if (ok.length < 8) return false
-    for (const key of ['pitch', 'gazeV', 'gazeLid', 'lookDown', 'yaw']) {
+    for (const key of Object.keys(this.offset)) {
       const base = this.profile.screen[key]
       const vals = ok.map((f) => f[key]).filter((x) => Number.isFinite(x)).sort((a, b) => a - b)
       if (!base || !vals.length) continue
       this.offset[key] = vals[vals.length >> 1] - base.median
     }
-    this.filter.reset()
+    this.tOffset = 0
+    this.window = []
+    this.pK = 0.05
     return true
   }
 
-  adaptFrom(features) {
-    // Called by the orchestrator with the raw features of each frame.
-    if (this.state !== STATE.SCREEN || !features || this.last.t == null || this.last.t > 0.25 || this.last.t < -0.4) return
-    const rate = this.params.driftRate
-    for (const key of ['pitch', 'gazeV', 'gazeLid', 'lookDown', 'yaw']) {
-      const base = this.profile.screen[key]
-      const x = features[key]
-      if (!base || x == null) continue
-      const axis = this.profile.axes.find((a) => a.feature === key)
-      const cap = axis ? Math.abs(axis.sep) * 0.6 : base.sd * 4
-      const target = x - base.median
-      this.offset[key] = Math.max(-cap, Math.min(cap, this.offset[key] + rate * (target - this.offset[key])))
-    }
-  }
+  /** Kept for callers of the previous API; adaptation now happens inside update(). */
+  adaptFrom() {}
 
   _out(events) {
     return {
@@ -367,10 +465,11 @@ export class GazeTracker {
       since: this.stateSince,
       label: this.last.label,
       score: this.last.t ?? null,
+      pKeyboard: this.pK,
       confidence: this.last.confidence ?? 0,
       reason: this.last.reason,
       z: this.last.z ?? null,
-      candidate: this.cand?.label ?? null,
+      candidate: this.aboveSince != null ? 'down' : this.awayCand ? 'away' : null,
       events,
     }
   }

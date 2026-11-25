@@ -73,7 +73,7 @@ function KeyboardView({ profile, highlight = null, target = null, showFingers = 
   }
 
   return (
-    <div className="flex flex-wrap items-start gap-x-6 gap-y-3 overflow-x-auto pb-1" role="group" aria-label={`Keyboard map, ${profile.layout}, ${profile.formFactor}`}>
+    <div className="flex flex-wrap items-start justify-center-safe gap-x-6 gap-y-3 overflow-x-auto pb-1" role="group" aria-label={`Keyboard map, ${profile.layout}, ${profile.formFactor}`}>
       <div className="kb">
         {ff.fnRow && !compact && <div className="kb-row">{FN_ROW.map(renderKey)}</div>}
         {rows.map((row, r) => (

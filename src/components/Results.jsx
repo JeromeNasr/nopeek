@@ -31,10 +31,10 @@ export function EyeSummary({ tracking, history = [] }) {
   const prior = history.filter((s) => s.tracking?.status === TRACKING_STATUS.MEASURED && s.tracking.discipline != null).slice(-5)
 
   if (t.status === TRACKING_STATUS.DISABLED) {
-    return <Notice tone="info" title="Eye tracking was off">Keyboard-looking was not measured for this run. Turn it on in Setup if you want visual-discipline coaching.</Notice>
+    return <Notice tone="info" title="Eye tracking was off">Keyboard-looking was not measured for this run. <Link className="underline" to="/setup#eye">Turn it on</Link> if you want coaching on looking down.</Notice>
   }
   if (t.status === TRACKING_STATUS.UNCALIBRATED) {
-    return <Notice tone="warn" title="Eye tracking is not calibrated">Nothing was measured. <Link className="underline" to="/setup">Calibrate in Setup</Link> (about a minute).</Notice>
+    return <Notice tone="warn" title="Eye tracking is not calibrated">Nothing was measured. <Link className="underline" to="/setup#eye">Calibrate</Link> (under a minute).</Notice>
   }
   if (t.status === TRACKING_STATUS.UNAVAILABLE) {
     return <Notice tone="warn" title="Eye tracking was unavailable for most of this run">Only {pct(t.coverage ?? 0)} of the run could be measured (camera or face not visible), so no visual-discipline score is given. This is not counted as good or bad discipline.</Notice>

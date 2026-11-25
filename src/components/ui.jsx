@@ -148,15 +148,15 @@ export function ProgressBar({ value, max = 100, tone = 'brand', label }) {
 }
 
 /** Segmented control (radio group): plain text options, the selected one takes the accent. */
-export function Seg({ options, value, onChange, label, format = (v) => v }) {
+export function Seg({ options, value, onChange, label, format = (v) => v, wrap = true, className }) {
   return (
-    <div role="radiogroup" aria-label={label} className="inline-flex flex-wrap items-center rounded-full bg-zinc-900 p-0.5">
+    <div role="radiogroup" aria-label={label} className={cx('inline-flex items-center rounded-full bg-zinc-900 p-0.5', wrap ? 'flex-wrap' : 'max-w-full flex-nowrap overflow-x-auto [scrollbar-width:none]', className)}>
       {options.map((o) => {
         const v = typeof o === 'object' ? o.id : o
         const text = typeof o === 'object' ? o.label : format(o)
         return (
           <button key={String(v)} type="button" role="radio" aria-checked={value === v} onClick={() => onChange(v)}
-            className={cx('btn rounded-full px-3 py-1 text-sm', value === v ? 'bg-zinc-800 text-emerald-400' : 'text-zinc-500 hover:text-zinc-200')}>
+            className={cx('btn shrink-0 whitespace-nowrap rounded-full px-3 py-1 text-sm', value === v ? 'bg-zinc-800 text-emerald-400' : 'text-zinc-500 hover:text-zinc-200')}>
             {text}
           </button>
         )
