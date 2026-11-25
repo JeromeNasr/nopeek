@@ -7,7 +7,7 @@ describe('word list shown to strangers', () => {
     for (const w of english) expect(w, w).toMatch(/^[a-z]+$/)
   })
   it('has no web-spam, adult or abbreviation leftovers', () => {
-    const banned = ['phentermine', 'babes', 'lingerie', 'sexual', 'naked', 'interracial', 'teens', 'ringtones', 'casino', 'ebay', 'usa', 'nj', 'tx', 'pm', 'isbn', 'html', 'faq']
+    const banned = ['phentermine', 'babes', 'lingerie', 'sexual', 'naked', 'interracial', 'teens', 'ringtones', 'casino', 'ebay', 'usa', 'nj', 'tx', 'pm', 'isbn', 'html', 'faq', 'ii', 'iii', 'km', 'oz', 'etc', 'avg', 'diff', 'john']
     const set = new Set(english)
     expect(banned.filter((w) => set.has(w))).toEqual([])
   })
