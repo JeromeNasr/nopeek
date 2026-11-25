@@ -6,6 +6,7 @@ import { ErrorBoundary, Spinner } from './components/ui.jsx'
 import { TrainingProvider } from './data/TrainingContext.jsx'
 import { useAuth } from './data/useAuth.js'
 import './lib/prefs.js'
+import { SITE } from './lib/site.js'
 import Home from './pages/Test.jsx'
 
 // Everything except the landing page is split out so first load stays small.
@@ -67,9 +68,11 @@ function Navbar() {
           <NavLink to="/setup" className={iconCls} onMouseEnter={pages.setup} aria-label="Settings" title="Settings">
             <Icon d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm7.4-2.5a7.7 7.7 0 0 0 0-1l2-1.6-2-3.4-2.4 1a7.6 7.6 0 0 0-1.7-1L15 3.5h-4l-.4 2.5a7.6 7.6 0 0 0-1.7 1l-2.4-1-2 3.4 2 1.6a7.7 7.7 0 0 0 0 1l-2 1.6 2 3.4 2.4-1c.5.4 1.1.7 1.7 1l.4 2.5h4l.4-2.5c.6-.3 1.2-.6 1.7-1l2.4 1 2-3.4-2-1.6Z" />
           </NavLink>
-          <NavLink to="/login" className={iconCls} onMouseEnter={pages.login} aria-label={user ? 'Account' : 'Sign in'} title={user ? 'Account' : 'Sign in'}>
-            <Icon d="M20 21a8 8 0 1 0-16 0M12 13a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z" />
-          </NavLink>
+          {SITE.accounts && (
+            <NavLink to="/login" className={iconCls} onMouseEnter={pages.login} aria-label={user ? 'Account' : 'Sign in'} title={user ? 'Account' : 'Sign in'}>
+              <Icon d="M20 21a8 8 0 1 0-16 0M12 13a4 4 0 1 0 0-8 4 4 0 0 0 0 8Z" />
+            </NavLink>
+          )}
         </div>
       </nav>
     </header>
@@ -115,8 +118,12 @@ function Shell() {
         </ErrorBoundary>
       </main>
       <footer className="chrome mx-auto flex w-full max-w-5xl flex-wrap justify-between gap-2 px-6 py-6 text-xs text-zinc-600">
-        <span>Your camera never leaves this device.</span>
-        <span>Typing statistics by <a className="underline hover:text-zinc-400" href="https://github.com/monkeytypegame/monkeytype" target="_blank" rel="noreferrer">Monkeytype</a> (GPL-3.0) · <NavLink to="/setup" className="underline hover:text-zinc-400">settings</NavLink></span>
+        <NavLink to="/setup#privacy" className="hover:text-zinc-400">Your camera never leaves this device · privacy</NavLink>
+        <span>
+          {SITE.feedbackUrl && <><a className="underline hover:text-zinc-400" href={SITE.feedbackUrl} target="_blank" rel="noreferrer">Send feedback</a> · </>}
+          Typing statistics by <a className="underline hover:text-zinc-400" href="https://github.com/monkeytypegame/monkeytype" target="_blank" rel="noreferrer">Monkeytype</a> (GPL-3.0)
+          {SITE.sourceUrl && <> · <a className="underline hover:text-zinc-400" href={SITE.sourceUrl} target="_blank" rel="noreferrer">source</a></>}
+        </span>
       </footer>
       {['/', '/practice'].includes(pathname) || pathname.startsWith('/learn/') ? <CameraThumb /> : null}
     </div>

@@ -111,3 +111,15 @@ no sideways scrolling at 390 px on any page (checked automatically).
 
 **Tests**: 134 unit tests; 31 browser feature checks (every page and mode, zero console errors); real-face calibration
 + self-check run; lint and build clean.
+
+## 17. Publishing
+A deployed build is **local-only by default**: the Supabase settings moved from `.env` to `.env.development`, which
+production builds never read, so no account server is contacted and no data leaves the browser unless accounts are
+deliberately configured on the host. Without accounts the sign-in page explains this and the account icon is hidden.
+Security headers and page routing are configured for Vercel (`vercel.json`) and Netlify/Cloudflare Pages
+(`public/_headers`, `public/_redirects`); a unit test keeps the two in sync.
+**Verified on the production build served with those exact headers**: typing test, every page, calibration start with
+camera, worker, WebAssembly and face model working; zero Content Security Policy violations (one was found and fixed:
+small fonts embedded in the stylesheet), zero requests to other sites, zero console errors; 31 feature checks pass.
+A tab left open during a redeploy reloads once and shows the new version (tested by rebuilding under an open tab).
+Steps, optional settings (feedback and source links) and the checklist for turning accounts on: `docs/DEPLOY.md`.

@@ -1,4 +1,5 @@
 import { Suspense, lazy, useMemo, useState } from 'react'
+import { SITE } from '../lib/site.js'
 import { Link } from 'react-router-dom'
 import { Badge, Button, Card, EmptyState, Notice, PageHeader, Spinner, Stat } from '../components/ui.jsx'
 import { cx } from '../lib/cx.js'
@@ -126,7 +127,8 @@ export default function Analyze() {
           </div>
         </Notice>
       )}
-      {!t.signedIn && <Notice tone="info" className="mb-4">You are not signed in, so history lives only on this device. <Link className="underline" to="/login">Sign in</Link> to keep it across devices.</Notice>}
+      {!t.signedIn && SITE.accounts && <Notice tone="info" className="mb-4">You are not signed in, so history lives only on this device. <Link className="underline" to="/login">Sign in</Link> to keep it across devices.</Notice>}
+      {!SITE.accounts && <p className="mb-4 text-xs text-zinc-500">Your history is stored in this browser only. Clearing this site&apos;s data deletes it.</p>}
 
       <section aria-label="Key figures" className="grid grid-cols-2 gap-3 md:grid-cols-4">
         <Stat label="Last WPM" value={Math.round(summary.currentWpm)} hint="most recent run" />

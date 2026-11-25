@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { getSupabase } from '../supabaseClient'
 import { useAuth } from '../data/useAuth'
 import { Button, Notice, Seg } from '../components/ui.jsx'
+import { SITE } from '../lib/site.js'
 
 export default function Login() {
   const navigate = useNavigate()
@@ -15,6 +16,17 @@ export default function Login() {
   const [message, setMessage] = useState(null)
 
   const isSignIn = mode === 'signin'
+
+  if (!SITE.accounts) {
+    return (
+      <div className="mx-auto max-w-sm px-6 py-16">
+        <h1 className="text-4xl font-medium tracking-tight text-white">No account needed</h1>
+        <p className="mt-3 text-zinc-300">Accounts are switched off on this site. Everything you do here – your sessions, settings and eye calibration – is saved in this browser only and is never sent anywhere.</p>
+        <p className="mt-3 text-sm text-zinc-500">Clearing this site&apos;s data in your browser deletes it.</p>
+        <Button className="mt-8" to="/">Start typing</Button>
+      </div>
+    )
+  }
 
   function switchMode(nextMode) {
     setMode(nextMode)

@@ -10,6 +10,14 @@ let lastLuma = 0
 let brightness = null
 let failures = 0
 
+// MediaPipe prints informational lines ("INFO: Created TensorFlow Lite XNNPACK delegate…") through
+// console.error, which browsers show as errors. Drop those; real errors still get through.
+const consoleError = console.error.bind(console)
+console.error = (...args) => {
+  if (typeof args[0] === 'string' && args[0].startsWith('INFO:')) return
+  consoleError(...args)
+}
+
 // CPU (XNNPACK) only: 15-30 ms per frame, and identical behaviour on every machine. The GPU
 // delegate inside a worker depends on the browser's WebGL-in-worker support and can fail silently.
 async function init({ wasmPath, model }) {
